@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Construtor de Cartinhas</title>
+  <style>
+    :root{
+      --bg:#0b1020; --panel: rgba(255,255,255,.06);
+      --stroke: rgba(255,255,255,.14);
+      --text: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.68);
+      --shadow: 0 18px 50px rgba(0,0,0,.45);
+      --r: 18px;
+      --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family:var(--font); color:var(--text);
+      background:
+        radial-gradient(1100px 800px at 25% 20%, #24346b 0%, transparent 60%),
+        radial-gradient(1000px 750px at 80% 25%, #6b235e 0%, transparent 55%),
+        linear-gradient(135deg, #0b1020, #111a33);
+      min-height:100vh;
+    }
+    header{
+      padding:18px;
+      display:flex; gap:12px; align-items:center; justify-content:space-between;
+    }
+    .brand{
+      display:flex; flex-direction:column; gap:4px;
+    }
+    .brand h1{margin:0; font-size:16px;}
+    .brand p{margin:0; font-size:12px; color:var(--muted)}
+    .wrap{
+      padding: 0 18px 18px;
+      display:grid;
+      grid-template-columns: 390px 1fr;
+      gap:14px;
+    }
+    .card{
+      background: rgba(20,20,30,.55);
+      border:1px solid var(--stroke);
+      border-radius: var(--r);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+      overflow:hidden;
+    }
+    .card-h{
+      padding:12px 12px;
+      border-bottom:1px solid rgba(255,255,255,.10);
+      display:flex; align-items:center; justify-content:space-between;
+      gap:10px;
+    }
+    .card-h .t{font-size:13px; color:var(--text); opacity:.95}
+    .card-b{padding:12px}
+    .grid{
+      display:grid;
+      gap:10px;
+    }
+    .themes{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:10px;
+    }
+    .theme{
+      padding:12px;
+      border-radius: 16px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.18);
+      cursor:pointer;
+      display:flex; gap:10px;
+      align-items:flex-start;
+    }
+    .theme:hover{ background: rgba(0,0,0,.26); }
+    .theme.active{
+      border-color: rgba(255,255,255,.25);
+      background: rgba(255,255,255,.08);
+    }
+    .emoji{font-size:22px; width:32px; text-align:center}
+    .theme .name{font-size:13px; margin:0}
+    .theme .desc{font-size:12px; color:var(--muted); margin:4px 0 0}
+
+    label{font-size:12px; color:var(--muted)}
+    input, textarea, select{
+      width:100%;
+      margin-top:6px;
+      border-radius: 14px;
+      border:1px solid rgba(255,255,255,.16);
+      background: rgba(0,0,0,.22);
+      color: var(--text);
+      padding:10px 12px;
+      outline:none;
+      font-size:13px;
+    }
+    textarea{min-height: 88px; resize:vertical;}
+    .row2{display:grid; grid-template-columns: 1fr 1fr; gap:10px;}
+    .btn{
+      border-radius: 14px;
+      border:1px solid rgba(255,255,255,.16);
+      background: rgba(255,255,255,.10);
+      color: var(--text);
+      padding:10px 12px;
+      cursor:pointer;
+      font-size:13px;
+      display:inline-flex; gap:8px; align-items:center;
+    }
+    .btn:hover{ background: rgba(255,255,255,.14); }
+    .btn:disabled{ opacity:.5; cursor:not-allowed; }
+    .hint{font-size:12px; color:var(--muted); line-height:1.45}
+
+    .preview{
+      height: calc(100vh - 86px);
+      width:100%;
+      border:0;
+      border-radius: 16px;
+      background: rgba(0,0,0,.15);
+    }
+
+    .bar{
+      display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;
+    }
+
+    @media (max-width: 980px){
+      .wrap{grid-template-columns: 1fr; }
+      .preview{height: 70vh;}
+    }
+  </style>
+
+  <!-- libs para ZIP -->
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>🧩 Construtor de Cartinhas</h1>
+      <p>Escolha um tema, preencha e exporte um ZIP (index.html + imagens/). Tudo roda no seu navegador.</p>
+    </div>
+    <div class="bar">
+      <button class="btn" id="btnExport">⬇️ Exportar ZIP</button>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="card-h">
+        <div class="t">🎭 Temas</div>
+      </div>
+      <div class="card-b">
+        <div class="themes" id="themes"></div>
+      </div>
+
+      <div class="card-h">
+        <div class="t">📝 Dados do tema</div>
+        <div class="hint" id="themeHint"></div>
+      </div>
+      <div class="card-b">
+        <div class="grid" id="form"></div>
+        <div class="hint" style="margin-top:10px;">
+          Dica: se a foto não aparecer no preview, tente trocar o arquivo e exportar de novo.
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <div class="t">👀 Preview</div>
+        <div class="hint">Atualiza automaticamente</div>
+      </div>
+      <div class="card-b">
+        <iframe class="preview" id="preview" sandbox="allow-same-origin"></iframe>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // =============================
+  // Helpers
+  // =============================
+  const $ = (s) => document.querySelector(s);
+
+  function escHtml(s){
+    return String(s ?? "").replace(/[&<>"']/g, (m)=>({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    }[m]));
+  }
+
+  function makeInput(field, value, onChange){
+    const wrap = document.createElement("div");
+    const id = "f_" + field.key;
+
+    wrap.innerHTML = `
+      <label for="${id}">${escHtml(field.label)}</label>
+    `;
+
+    let el;
+    if(field.type === "textarea"){
+      el = document.createElement("textarea");
+      el.id = id;
+      el.value = value ?? "";
+    } else if(field.type === "select"){
+      el = document.createElement("select");
+      el.id = id;
+      (field.options || []).forEach(opt=>{
+        const o = document.createElement("option");
+        o.value = opt.value;
+        o.textContent = opt.label;
+        el.appendChild(o);
+      });
+      el.value = value ?? (field.options?.[0]?.value ?? "");
+    } else if(field.type === "files"){
+      el = document.createElement("input");
+      el.id = id;
+      el.type = "file";
+      el.accept = field.accept || "";
+      el.multiple = !!field.multiple;
+    } else {
+      el = document.createElement("input");
+      el.id = id;
+      el.type = field.type || "text";
+      el.value = value ?? "";
+      if(field.placeholder) el.placeholder = field.placeholder;
+    }
+
+    el.addEventListener("input", () => onChange(field, el));
+    el.addEventListener("change", () => onChange(field, el));
+    wrap.appendChild(el);
+
+    if(field.help){
+      const h = document.createElement("div");
+      h.className = "hint";
+      h.style.marginTop = "6px";
+      h.textContent = field.help;
+      wrap.appendChild(h);
+    }
+
+    return wrap;
+  }
+
+  function readFileAsDataURL(file){
+    return new Promise((resolve, reject)=>{
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+  }
+
+  // =============================
+  // Temas (adicionar tema novo = criar fields + generate)
+  // =============================
+  const THEMES = {
+    heartos: {
+      emoji: "💻",
+      name: "HeartOS (mini)",
+      desc: "Tela de senha + pasta memórias com fotos + carta final.",
+      hint: "Senha aceita exatamente o que você colocar em “Senha”.",
+      fields: [
+        { key:"password", label:"Senha", type:"text", placeholder:"ex: mohmoh" },
+        { key:"hint", label:"Dica da senha", type:"text", placeholder:"ex: qual o nosso nome?" },
+        { key:"title", label:"Título do sistema", type:"text", placeholder:"ex: HeartOS", help:"Aparece no topo." },
+        { key:"final", label:"Carta final", type:"textarea", help:"Mensagem que aparece no botão “Encerrar sessão”." },
+        { key:"photos", label:"Fotos (até 6)", type:"files", accept:"image/*", multiple:true, help:"As fotos irão para a pasta memórias." },
+        { key:"captions", label:"Legendas (uma por linha)", type:"textarea", help:"Digite 1 legenda por linha, na ordem das fotos." }
+      ],
+      generate: (data, assets, mode) => generateHeartOS(data, assets, mode)
+    },
+
+    processo: {
+      emoji: "⚖️",
+      name: "Processo Fofo",
+      desc: "Página única estilo “tribunal do coração” + galeria.",
+      hint: "Ótimo para humor e romance juntos.",
+      fields: [
+        { key:"accused", label:"Nome do(a) acusado(a)", type:"text", placeholder:"ex: minha princesa" },
+        { key:"charge", label:"Acusação", type:"text", placeholder:"ex: ser absolutamente inesquecível" },
+        { key:"proofs", label:"Provas (uma por linha)", type:"textarea" },
+        { key:"verdict", label:"Veredito", type:"textarea" },
+        { key:"photos", label:"Fotos (opcional)", type:"files", accept:"image/*", multiple:true }
+      ],
+      generate: (data, assets, mode) => generateProcesso(data, assets, mode)
+    },
+
+    convite: {
+      emoji: "💌",
+      name: "Convite Formal",
+      desc: "Convite elegante com data/hora/local e RSVP.",
+      hint: "Perfeito para jantar, encontro surpresa, aniversário etc.",
+      fields: [
+        { key:"eventTitle", label:"Título do convite", type:"text", placeholder:"ex: Convite Especial" },
+        { key:"to", label:"Para", type:"text", placeholder:"ex: mohmohzinho" },
+        { key:"date", label:"Data", type:"text", placeholder:"ex: 20/12/2025" },
+        { key:"time", label:"Hora", type:"text", placeholder:"ex: 19:30" },
+        { key:"location", label:"Local", type:"text", placeholder:"ex: nosso cantinho favorito" },
+        { key:"dress", label:"Traje (opcional)", type:"text", placeholder:"ex: casual chique" },
+        { key:"message", label:"Mensagem", type:"textarea" },
+        { key:"rsvp", label:"RSVP (link WhatsApp/Instagram)", type:"text", placeholder:"ex: https://wa.me/55..." },
+        { key:"cover", label:"Imagem de capa (opcional)", type:"files", accept:"image/*", multiple:false }
+      ],
+      generate: (data, assets, mode) => generateConvite(data, assets, mode)
+    }
+  };
+
+  // =============================
+  // Estado
+  // =============================
+  let themeId = "heartos";
+  const state = {
+    heartos: {
+      password: "mohmoh",
+      hint: "qual o nosso nome?",
+      title: "HeartOS",
+      final: "Antes de desligar…\neu só queria deixar registrado:\nvocê é o tipo de pessoa que eu não quero “fechar a aba”. 💗",
+      captions: "Legenda 1\nLegenda 2\nLegenda 3"
+    },
+    processo: {
+      accused: "você",
+      charge: "ser absolutamente inesquecível",
+      proofs: "Você melhora meus dias sem esforço.\nVocê mora no meu pensamento sem aluguel.\nVocê é meu “sim” preferido.",
+      verdict: "Condenada(o) a receber cuidado, carinho e beijinhos sempre que necessário."
+    },
+    convite: {
+      eventTitle: "Convite Especial",
+      to: "mohmohzinho",
+      date: "20/12/2025",
+      time: "19:30",
+      location: "um lugar secreto",
+      dress: "casual",
+      message: "Você está convidada(o) para uma noite só nossa.",
+      rsvp: ""
+    }
+  };
+
+  // assets por tema (arquivos do usuário)
+  const assets = {
+    heartos: { photos: [] },
+    processo: { photos: [] },
+    convite: { cover: null }
+  };
+
+  // =============================
+  // UI: temas + formulário
