@@ -169,7 +169,8 @@
         <div class="hint">Atualiza automaticamente</div>
       </div>
       <div class="card-b">
-        <iframe class="preview" id="preview" sandbox="allow-same-origin"></iframe>
+        <!-- ✅ Corrigido: permitir scripts no preview (HeartOS precisa) -->
+        <iframe class="preview" id="preview" sandbox="allow-same-origin allow-scripts"></iframe>
       </div>
     </div>
   </div>
@@ -633,7 +634,9 @@ ${body}
       `;
     }).join("");
 
-    // HeartOS mini: lock + desktop simples
+    // ✅ CORREÇÃO CRÍTICA:
+    // Dentro de um <script> do HTML principal, não podemos ter "</script>" literal dentro de strings,
+    // senão o navegador encerra o script principal no meio. Então usamos "<\/script>".
     const html = `<!doctype html>
 <html lang="pt-br">
 <head>
@@ -790,7 +793,7 @@ ${body}
   const PASSWORD = ${JSON.stringify(String(password || ""))};
 
   function normalize(s){
-    return String(s).trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\\s+/g," ");
+    return String(s).trim().toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").replace(/\\s+/g," ");
   }
 
   const lock = document.getElementById("lock");
@@ -826,7 +829,7 @@ ${body}
     document.getElementById("clock").textContent = String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
   }
   setInterval(tick, 1000); tick();
-</script>
+<\/script>
 </body>
 </html>`;
 
