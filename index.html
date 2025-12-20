@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Construtor de Cartinhas</title>
+  <title>Construtor de Cartinha</title>
   <style>
     :root{
-      --bg:#0b1020; --panel: rgba(255,255,255,.06);
+      --bg:#0b1020;
       --stroke: rgba(255,255,255,.14);
       --text: rgba(255,255,255,.92);
       --muted: rgba(255,255,255,.68);
@@ -54,27 +54,9 @@
     .card-h .t{font-size:13px; color:var(--text); opacity:.95}
     .card-b{padding:12px}
     .grid{display:grid; gap:10px;}
-    .themes{display:grid; grid-template-columns: 1fr; gap:10px;}
-    .theme{
-      padding:12px;
-      border-radius: 16px;
-      border:1px solid rgba(255,255,255,.12);
-      background: rgba(0,0,0,.18);
-      cursor:pointer;
-      display:flex; gap:10px;
-      align-items:flex-start;
-    }
-    .theme:hover{ background: rgba(0,0,0,.26); }
-    .theme.active{
-      border-color: rgba(255,255,255,.25);
-      background: rgba(255,255,255,.08);
-    }
-    .emoji{font-size:22px; width:32px; text-align:center}
-    .theme .name{font-size:13px; margin:0}
-    .theme .desc{font-size:12px; color:var(--muted); margin:4px 0 0}
 
     label{font-size:12px; color:var(--muted)}
-    input, textarea, select{
+    input, textarea{
       width:100%;
       margin-top:6px;
       border-radius: 14px;
@@ -85,7 +67,7 @@
       outline:none;
       font-size:13px;
     }
-    textarea{min-height: 88px; resize:vertical;}
+    textarea{min-height: 120px; resize:vertical;}
 
     .btn{
       border-radius: 14px;
@@ -108,7 +90,6 @@
       border-radius: 16px;
       background: rgba(0,0,0,.15);
     }
-
     .bar{display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; align-items:center;}
 
     .toast{
@@ -142,8 +123,8 @@
 <body>
   <header>
     <div class="brand">
-      <h1>🧩 Construtor de Cartinhas</h1>
-      <p>Escolha um tema, preencha e exporte um ZIP (index.html + imagens/). Ou publique para gerar um link.</p>
+      <h1>💌 Construtor de Cartinha</h1>
+      <p>Preencha, veja o preview, exporte um ZIP ou publique para gerar um link.</p>
     </div>
     <div class="bar">
       <button class="btn" id="btnPublish">🌐 Publicar (gerar link)</button>
@@ -154,20 +135,12 @@
   <div class="wrap">
     <div class="card">
       <div class="card-h">
-        <div class="t">🎭 Temas</div>
-      </div>
-      <div class="card-b">
-        <div class="themes" id="themes"></div>
-      </div>
-
-      <div class="card-h">
-        <div class="t">📝 Dados do tema</div>
-        <div class="hint" id="themeHint"></div>
+        <div class="t">📝 Dados da cartinha</div>
       </div>
       <div class="card-b">
         <div class="grid" id="form"></div>
         <div class="hint" style="margin-top:10px;">
-          Dica (celular): selecione as fotos e aguarde carregar. Se não aparecer no preview, troque o arquivo e tente de novo.
+          Dica (celular): ao escolher a foto, aguarde carregar. Se não aparecer no preview, troque o arquivo.
         </div>
       </div>
     </div>
@@ -178,7 +151,6 @@
         <div class="hint">Atualiza automaticamente</div>
       </div>
       <div class="card-b">
-        <!-- IMPORTANTE: apenas allow-scripts (sem allow-same-origin) para não aparecer o aviso de sandbox -->
         <iframe class="preview" id="preview" sandbox="allow-scripts"></iframe>
       </div>
     </div>
@@ -211,7 +183,7 @@
   function showToast(title, msg, actions = []){
     const t = $("#toast");
     $("#toastTitle").textContent = title || "OK";
-    $("#toastMsg").textContent = msg || "";
+    $("#toastMsg").innerHTML = msg || "";
     const row = $("#toastRow");
     row.innerHTML = "";
     actions.forEach(a=>{
@@ -234,52 +206,42 @@
     showToast._to = setTimeout(()=> t.classList.remove("open"), 12000);
   }
 
-  function makeInput(field, value, onChange){
+  function makeField({key,label,type="text",placeholder="",help=""}, value, onChange){
     const wrap = document.createElement("div");
-    const id = "f_" + field.key;
-
-    wrap.innerHTML = `<label for="${id}">${escHtml(field.label)}</label>`;
+    const id = "f_" + key;
+    wrap.innerHTML = `<label for="${id}">${escHtml(label)}</label>`;
     let el;
 
-    if(field.type === "textarea"){
+    if(type === "textarea"){
       el = document.createElement("textarea");
       el.id = id;
       el.value = value ?? "";
-    } else if(field.type === "select"){
-      el = document.createElement("select");
-      el.id = id;
-      (field.options || []).forEach(opt=>{
-        const o = document.createElement("option");
-        o.value = opt.value;
-        o.textContent = opt.label;
-        el.appendChild(o);
-      });
-      el.value = value ?? (field.options?.[0]?.value ?? "");
-    } else if(field.type === "files"){
+      if(placeholder) el.placeholder = placeholder;
+    } else if(type === "file"){
       el = document.createElement("input");
       el.id = id;
       el.type = "file";
-      el.accept = field.accept || "";
-      el.multiple = !!field.multiple;
+      el.accept = "image/*";
     } else {
       el = document.createElement("input");
       el.id = id;
-      el.type = field.type || "text";
+      el.type = type;
       el.value = value ?? "";
-      if(field.placeholder) el.placeholder = field.placeholder;
+      if(placeholder) el.placeholder = placeholder;
     }
 
-    el.addEventListener("input", () => onChange(field, el));
-    el.addEventListener("change", () => onChange(field, el));
+    el.addEventListener("input", ()=> onChange(key, el));
+    el.addEventListener("change", ()=> onChange(key, el));
     wrap.appendChild(el);
 
-    if(field.help){
+    if(help){
       const h = document.createElement("div");
       h.className = "hint";
       h.style.marginTop = "6px";
-      h.textContent = field.help;
+      h.textContent = help;
       wrap.appendChild(h);
     }
+
     return wrap;
   }
 
@@ -293,192 +255,173 @@
   }
 
   // =============================
-  // Temas
+  // Estado (1 tema)
   // =============================
-  const THEMES = {
-    heartos: {
-      emoji: "💻",
-      name: "HeartOS (mini)",
-      desc: "Tela de senha + pasta memórias com fotos + carta final.",
-      hint: "A senha aceita exatamente o que você colocar em “Senha”.",
-      fields: [
-        { key:"password", label:"Senha", type:"text", placeholder:"ex: mohmoh" },
-        { key:"hint", label:"Dica da senha", type:"text", placeholder:"ex: qual o nosso nome?" },
-        { key:"title", label:"Título do sistema", type:"text", placeholder:"ex: HeartOS", help:"Aparece no topo." },
-        { key:"final", label:"Carta final", type:"textarea", help:"Mensagem que aparece em “Encerrar sessão”." },
-        { key:"photos", label:"Fotos (até 6)", type:"files", accept:"image/*", multiple:true, help:"As fotos irão para a pasta memórias." },
-        { key:"captions", label:"Legendas (uma por linha)", type:"textarea", help:"Digite 1 legenda por linha, na ordem das fotos." }
-      ],
-      generate: (data, assets, mode) => generateHeartOS(data, assets, mode)
-    },
-
-    processo: {
-      emoji: "⚖️",
-      name: "Processo Fofo",
-      desc: "Página única estilo “tribunal do coração” + galeria.",
-      hint: "Ótimo para humor e romance juntos.",
-      fields: [
-        { key:"accused", label:"Nome do(a) acusado(a)", type:"text", placeholder:"ex: minha princesa" },
-        { key:"charge", label:"Acusação", type:"text", placeholder:"ex: ser absolutamente inesquecível" },
-        { key:"proofs", label:"Provas (uma por linha)", type:"textarea" },
-        { key:"verdict", label:"Veredito", type:"textarea" },
-        { key:"photos", label:"Fotos (opcional)", type:"files", accept:"image/*", multiple:true }
-      ],
-      generate: (data, assets, mode) => generateProcesso(data, assets, mode)
-    },
-
-    convite: {
-      emoji: "💌",
-      name: "Convite Formal",
-      desc: "Convite elegante com data/hora/local e RSVP.",
-      hint: "Perfeito para jantar, encontro surpresa, aniversário etc.",
-      fields: [
-        { key:"eventTitle", label:"Título do convite", type:"text", placeholder:"ex: Convite Especial" },
-        { key:"to", label:"Para", type:"text", placeholder:"ex: mohmohzinho" },
-        { key:"date", label:"Data", type:"text", placeholder:"ex: 20/12/2025" },
-        { key:"time", label:"Hora", type:"text", placeholder:"ex: 19:30" },
-        { key:"location", label:"Local", type:"text", placeholder:"ex: nosso cantinho favorito" },
-        { key:"dress", label:"Traje (opcional)", type:"text", placeholder:"ex: casual chique" },
-        { key:"message", label:"Mensagem", type:"textarea" },
-        { key:"rsvp", label:"RSVP (link WhatsApp/Instagram)", type:"text", placeholder:"ex: https://wa.me/55..." },
-        { key:"cover", label:"Imagem de capa (opcional)", type:"files", accept:"image/*", multiple:false }
-      ],
-      generate: (data, assets, mode) => generateConvite(data, assets, mode)
-    }
-  };
-
-  // =============================
-  // Estado
-  // =============================
-  let themeId = "heartos";
-
   const state = {
-    heartos: {
-      password: "mohmoh",
-      hint: "qual o nosso nome?",
-      title: "HeartOS",
-      final: "Antes de desligar…\neu só queria deixar registrado:\nvocê é o tipo de pessoa que eu não quero “fechar a aba”. 💗",
-      captions: "Legenda 1\nLegenda 2\nLegenda 3"
-    },
-    processo: {
-      accused: "você",
-      charge: "ser absolutamente inesquecível",
-      proofs: "Você melhora meus dias sem esforço.\nVocê mora no meu pensamento sem aluguel.\nVocê é meu “sim” preferido.",
-      verdict: "Condenada(o) a receber cuidado, carinho e beijinhos sempre que necessário."
-    },
-    convite: {
-      eventTitle: "Convite Especial",
-      to: "mohmohzinho",
-      date: "20/12/2025",
-      time: "19:30",
-      location: "um lugar secreto",
-      dress: "casual",
-      message: "Você está convidada(o) para uma noite só nossa.",
-      rsvp: ""
-    }
+    title: "Uma cartinha pra você 💗",
+    to: "Meu amor",
+    message: "Escreva aqui sua mensagem...\n\nCom carinho,\nEu ❤️",
+    from: "Seu nome",
   };
 
-  // assets por tema
   const assets = {
-    heartos: { photos: [] },
-    processo: { photos: [] },
-    convite: { cover: null }
+    photo: null,      // File
+    photoDataUrl: ""  // DataURL para preview
   };
 
-  // =============================
-  // UI
-  // =============================
-  function renderThemes(){
-    const root = $("#themes");
-    root.innerHTML = "";
-    Object.entries(THEMES).forEach(([id, t])=>{
-      const el = document.createElement("div");
-      el.className = "theme" + (id === themeId ? " active" : "");
-      el.innerHTML = `
-        <div class="emoji">${t.emoji}</div>
-        <div>
-          <p class="name">${escHtml(t.name)}</p>
-          <p class="desc">${escHtml(t.desc)}</p>
-        </div>
-      `;
-      el.addEventListener("click", ()=>{
-        themeId = id;
-        renderThemes();
-        renderForm();
-        updatePreview();
-      });
-      root.appendChild(el);
-    });
-  }
+  const FIELDS = [
+    { key:"title", label:"Título", placeholder:"ex: Pra você..." },
+    { key:"to", label:"Para", placeholder:"ex: Meu amor" },
+    { key:"message", label:"Mensagem", type:"textarea", placeholder:"Digite sua cartinha aqui..." },
+    { key:"from", label:"Assinatura", placeholder:"ex: Nicollas" },
+    { key:"photo", label:"Foto (opcional)", type:"file", help:"Essa foto aparece no topo da cartinha." },
+  ];
 
+  // =============================
+  // Render form
+  // =============================
   function renderForm(){
     const form = $("#form");
-    const t = THEMES[themeId];
-    $("#themeHint").textContent = t.hint || "";
     form.innerHTML = "";
 
-    const data = state[themeId] || (state[themeId] = {});
-    t.fields.forEach(field=>{
-      const el = makeInput(field, data[field.key], async (field, inputEl)=>{
-        if(field.type === "files"){
-          const files = [...(inputEl.files || [])];
-
-          if(themeId === "convite" && field.key === "cover"){
-            assets.convite.cover = files[0] || null;
-            if(assets.convite.cover){
-              assets.convite.cover._dataUrl = await readFileAsDataURL(assets.convite.cover);
-            }
-          } else {
-            assets[themeId].photos = [];
-            for(const f of files){
-              f._dataUrl = await readFileAsDataURL(f);
-              assets[themeId].photos.push(f);
-            }
+    FIELDS.forEach(f=>{
+      const value = (f.key in state) ? state[f.key] : "";
+      const el = makeField(f, value, async (key, inputEl)=>{
+        if(key === "photo"){
+          const file = (inputEl.files && inputEl.files[0]) ? inputEl.files[0] : null;
+          assets.photo = file;
+          assets.photoDataUrl = "";
+          if(file){
+            assets.photoDataUrl = await readFileAsDataURL(file);
           }
         } else {
-          data[field.key] = inputEl.value;
+          state[key] = inputEl.value;
         }
         updatePreview();
       });
-
       form.appendChild(el);
     });
+  }
+
+  // =============================
+  // Gerador da cartinha (SEM senha)
+  // =============================
+  function generateLetter(mode){
+    const title = state.title || "";
+    const to = state.to || "";
+    const message = state.message || "";
+    const from = state.from || "";
+
+    const photoSrc = assets.photo
+      ? (mode === "preview"
+          ? (assets.photoDataUrl || "")
+          : `./imagens/${safeName(assets.photo.name)}`)
+      : "";
+
+    // IMPORTANTE: dentro desta string não pode existir </script literal.
+    // A gente usa <\/script no final do script (mesmo não sendo necessário aqui, é uma segurança extra).
+    return `<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escHtml(title || "Cartinha")}</title>
+<style>
+  :root{
+    --bg1:#0b1020; --bg2:#111a33;
+    --text: rgba(255,255,255,.92);
+    --muted: rgba(255,255,255,.70);
+    --stroke: rgba(255,255,255,.16);
+    --shadow: 0 18px 50px rgba(0,0,0,.45);
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  }
+  body{
+    margin:0; color:var(--text);
+    background:
+      radial-gradient(1100px 800px at 25% 20%, #24346b 0%, transparent 60%),
+      radial-gradient(1000px 750px at 80% 25%, #6b235e 0%, transparent 55%),
+      linear-gradient(135deg, var(--bg1), var(--bg2));
+    min-height:100vh;
+    padding:18px;
+  }
+  .card{
+    width:min(820px, 100%);
+    margin: 0 auto;
+    border-radius: 22px;
+    background: rgba(20,20,30,.58);
+    border:1px solid var(--stroke);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(14px);
+    overflow:hidden;
+  }
+  .h{padding:14px 16px; border-bottom:1px solid rgba(255,255,255,.10);}
+  .b{padding:16px;}
+  .title{margin:0; font-size:18px;}
+  .muted{color:var(--muted); font-size:12px; line-height:1.45}
+  .photo{
+    width:100%;
+    display:block;
+    border-bottom:1px solid rgba(255,255,255,.10);
+  }
+  .msg{
+    white-space:pre-wrap;
+    line-height:1.7;
+    font-size:15px;
+    margin-top:10px;
+  }
+  .sig{
+    margin-top:16px;
+    padding-top:14px;
+    border-top:1px dashed rgba(255,255,255,.18);
+    font-size:14px;
+  }
+  .to{
+    margin-top:6px;
+    font-size:14px;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    ${photoSrc ? `<img class="photo" src="${escAttr(photoSrc)}" alt="">` : ``}
+    <div class="h">
+      <h1 class="title">${escHtml(title)}</h1>
+      <div class="to muted">Para: <b>${escHtml(to)}</b></div>
+    </div>
+    <div class="b">
+      <div class="msg">${escHtml(message)}</div>
+      <div class="sig muted">— ${escHtml(from)}</div>
+    </div>
+  </div>
+
+<script>
+  // (nada aqui, só mantendo o bloco caso você queira animações depois)
+<\/script>
+</body>
+</html>`;
   }
 
   // =============================
   // Preview / Export / Publish
   // =============================
   function updatePreview(){
-    const t = THEMES[themeId];
-    const data = state[themeId] || {};
-    const html = t.generate(data, assets[themeId], "preview");
-    $("#preview").srcdoc = html;
+    $("#preview").srcdoc = generateLetter("preview");
   }
 
   async function exportZip(){
-    const t = THEMES[themeId];
-    const data = state[themeId] || {};
     const zip = new JSZip();
-
-    const html = t.generate(data, assets[themeId], "export");
-    zip.file("index.html", html);
+    zip.file("index.html", generateLetter("export"));
 
     const imgFolder = zip.folder("imagens");
-
-    if(themeId === "convite"){
-      const cover = assets.convite.cover;
-      if(cover) imgFolder.file(safeName(cover.name), cover);
-    } else {
-      const photos = (assets[themeId].photos || []);
-      photos.forEach(f => imgFolder.file(safeName(f.name), f));
+    if(assets.photo){
+      imgFolder.file(safeName(assets.photo.name), assets.photo);
     }
 
     const blob = await zip.generateAsync({type:"blob"});
-    saveAs(blob, `cartinha_${themeId}.zip`);
+    saveAs(blob, `cartinha.zip`);
   }
 
   async function publish(){
-    // Publicar só funciona no domínio (Vercel), não no arquivo local file://
     if(location.protocol === "file:"){
       showToast("Publicar não disponível", "Abra este construtor pelo link do Vercel para publicar (no file:// não dá).");
       return;
@@ -489,9 +432,7 @@
     btn.textContent = "⏳ Publicando...";
 
     try{
-      const t = THEMES[themeId];
-      const data = state[themeId] || {};
-      const html = t.generate(data, assets[themeId], "export"); // export mode (./imagens/)
+      const html = generateLetter("export");
       const r = await fetch("/api/publish", {
         method: "POST",
         headers: { "content-type":"application/json" },
@@ -499,14 +440,13 @@
       });
 
       const j = await r.json().catch(()=> ({}));
-      if(!r.ok){
-        throw new Error(j?.error || ("Falha ao publicar: HTTP " + r.status));
-      }
+      if(!r.ok) throw new Error(j?.error || ("Falha ao publicar: HTTP " + r.status));
 
       const url = j.url;
+
       showToast(
         "Publicado ✅",
-        "Copie e envie esse link no WhatsApp/Instagram:",
+        `Link: <a href="${escAttr(url)}" target="_blank" rel="noopener">${escHtml(url)}</a>`,
         [
           {
             text: "Copiar link",
@@ -522,10 +462,9 @@
           { tag:"a", href: url, text:"Abrir link" }
         ]
       );
-
-      // também mostra o link no texto (pra copiar manualmente fácil)
-      $("#toastMsg").innerHTML = `Link: <a href="${escAttr(url)}" target="_blank" rel="noopener">${escHtml(url)}</a>`;
-    } finally {
+    } catch(e){
+      showToast("Erro ao publicar", escHtml(String(e?.message || e)));
+    } finally{
       btn.disabled = false;
       btn.textContent = "🌐 Publicar (gerar link)";
     }
@@ -534,396 +473,7 @@
   $("#btnExport").addEventListener("click", exportZip);
   $("#btnPublish").addEventListener("click", publish);
 
-  // =============================
-  // Templates (geradores)
-  // =============================
-  function baseDoc(title, body, extraCss=""){
-    return `<!doctype html>
-<html lang="pt-br">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escHtml(title)}</title>
-<style>
-  :root{
-    --bg1:#0b1020; --bg2:#111a33;
-    --text: rgba(255,255,255,.92);
-    --muted: rgba(255,255,255,.68);
-    --stroke: rgba(255,255,255,.16);
-    --shadow: 0 18px 50px rgba(0,0,0,.45);
-    --r: 18px;
-    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
-  }
-  body{
-    margin:0; color:var(--text);
-    background:
-      radial-gradient(1100px 800px at 25% 20%, #24346b 0%, transparent 60%),
-      radial-gradient(1000px 750px at 80% 25%, #6b235e 0%, transparent 55%),
-      linear-gradient(135deg, var(--bg1), var(--bg2));
-    min-height:100vh;
-  }
-  .card{
-    width:min(820px, calc(100% - 32px));
-    margin: 18px auto;
-    border-radius: 22px;
-    background: rgba(20,20,30,.58);
-    border:1px solid var(--stroke);
-    box-shadow: var(--shadow);
-    backdrop-filter: blur(14px);
-    overflow:hidden;
-  }
-  .h{padding:14px 16px; border-bottom:1px solid rgba(255,255,255,.10);}
-  .b{padding:16px;}
-  .muted{color:var(--muted); font-size:12px; line-height:1.45}
-  .h1{margin:0; font-size:18px;}
-  ${extraCss}
-</style>
-</head>
-<body>
-${body}
-</body>
-</html>`;
-  }
-
-  function generateProcesso(data, a, mode){
-    const accused = data.accused || "você";
-    const charge = data.charge || "";
-    const proofs = (data.proofs || "").split("\n").map(s=>s.trim()).filter(Boolean);
-    const verdict = data.verdict || "";
-    const photos = (a.photos || []).slice(0, 10);
-
-    const imgs = photos.map(f=>{
-      const src = mode === "preview" ? (f._dataUrl || "") : `./imagens/${safeName(f.name)}`;
-      return `<img src="${escAttr(src)}" alt="" style="width:100%; border-radius:16px; border:1px solid rgba(255,255,255,.12);" />`;
-    }).join("");
-
-    return baseDoc("Processo Fofo", `
-      <div class="card">
-        <div class="h">
-          <div class="h1">⚖️ Tribunal do Coração</div>
-          <div class="muted">Processo nº 0001/❤️ • Vara: Carinho & Afeto</div>
-        </div>
-        <div class="b">
-          <div style="display:grid; gap:10px;">
-            <div style="padding:14px; border-radius:18px; border:1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.18);">
-              <div class="muted">Acusado(a):</div>
-              <div style="font-size:16px; font-weight:700;">${escHtml(accused)}</div>
-            </div>
-
-            <div style="padding:14px; border-radius:18px; border:1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.18);">
-              <div class="muted">Acusação:</div>
-              <div style="font-size:15px;">${escHtml(charge)}</div>
-            </div>
-
-            <div style="padding:14px; border-radius:18px; border:1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.18);">
-              <div class="muted">Provas:</div>
-              <ul style="margin:8px 0 0 18px; line-height:1.65;">
-                ${proofs.map(p=>`<li>${escHtml(p)}</li>`).join("") || "<li>(adicione suas provas 😌)</li>"}
-              </ul>
-            </div>
-
-            <div style="padding:14px; border-radius:18px; border:1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.18);">
-              <div class="muted">Veredito:</div>
-              <div style="white-space:pre-wrap; line-height:1.6;">${escHtml(verdict)}</div>
-            </div>
-
-            ${photos.length ? `
-              <div style="display:grid; gap:10px;">
-                <div class="muted">Galeria (provas fotográficas)</div>
-                ${imgs}
-              </div>
-            ` : `<div class="muted">Você pode adicionar fotos no campo “Fotos (opcional)”.</div>`}
-          </div>
-        </div>
-      </div>
-    `);
-  }
-
-  function generateConvite(data, a, mode){
-    const cover = a.cover;
-    const coverSrc = cover
-      ? (mode === "preview" ? (cover._dataUrl || "") : `./imagens/${safeName(cover.name)}`)
-      : "";
-
-    const rsvp = (data.rsvp || "").trim();
-
-    return baseDoc("Convite", `
-      <div class="card">
-        <div class="h">
-          <div class="h1">💌 ${escHtml(data.eventTitle || "Convite")}</div>
-          <div class="muted">Para: <b>${escHtml(data.to || "")}</b></div>
-        </div>
-        <div class="b">
-          ${coverSrc ? `
-            <div style="margin-bottom:12px; border-radius:18px; overflow:hidden; border:1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.18);">
-              <img src="${escAttr(coverSrc)}" alt="" style="width:100%; display:block;">
-            </div>
-          ` : ""}
-
-          <div style="display:grid; gap:10px;">
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-              <div style="padding:14px; border-radius:18px; border:1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.18);">
-                <div class="muted">Data</div>
-                <div style="font-size:15px; font-weight:700;">${escHtml(data.date || "")}</div>
-              </div>
-              <div style="padding:14px; border-radius:18px; border:1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.18);">
-                <div class="muted">Hora</div>
-                <div style="font-size:15px; font-weight:700;">${escHtml(data.time || "")}</div>
-              </div>
-            </div>
-
-            <div style="padding:14px; border-radius:18px; border:1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.18);">
-              <div class="muted">Local</div>
-              <div style="font-size:15px;">${escHtml(data.location || "")}</div>
-            </div>
-
-            ${(data.dress || "").trim() ? `
-              <div style="padding:14px; border-radius:18px; border:1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.18);">
-                <div class="muted">Traje</div>
-                <div style="font-size:15px;">${escHtml(data.dress)}</div>
-              </div>
-            ` : ""}
-
-            <div style="padding:14px; border-radius:18px; border:1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.18);">
-              <div class="muted">Mensagem</div>
-              <div style="white-space:pre-wrap; line-height:1.6;">${escHtml(data.message || "")}</div>
-            </div>
-
-            ${rsvp ? `
-              <a href="${escAttr(rsvp)}" style="
-                display:inline-block; text-decoration:none; color: rgba(255,255,255,.92);
-                padding:12px 14px; border-radius: 999px;
-                border:1px solid rgba(255,255,255,.18);
-                background: rgba(255,255,255,.10);
-              ">✅ Confirmar presença (RSVP)</a>
-            ` : `<div class="muted">Se quiser, coloque um link no campo RSVP (WhatsApp/Instagram).</div>`}
-          </div>
-        </div>
-      </div>
-    `);
-  }
-
-  function generateHeartOS(data, a, mode){
-    const title = data.title || "HeartOS";
-    const password = data.password || "";
-    const hint = data.hint || "dica";
-    const final = data.final || "";
-
-    const photos = (a.photos || []).slice(0, 6);
-    const captions = (data.captions || "").split("\n").map(s=>s.trim());
-
-    const memItems = photos.map((f, idx)=>{
-      const src = mode === "preview" ? (f._dataUrl || "") : `./imagens/${safeName(f.name)}`;
-      const cap = captions[idx] || "";
-      return `
-        <div style="border-radius:18px; overflow:hidden; border:1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.18);">
-          <img src="${escAttr(src)}" alt="" style="width:100%; display:block;">
-          ${cap ? `<div style="padding:10px 12px; color:rgba(255,255,255,.75); font-size:12px; border-top:1px solid rgba(255,255,255,.10);">${escHtml(cap)}</div>` : ``}
-        </div>
-      `;
-    }).join("");
-
-    // ⚠️ SUPER IMPORTANTE:
-    // Dentro desta template string NÃO pode existir o texto literal </script>
-    // por isso o fechamento abaixo é <\/script>
-    return `<!doctype html>
-<html lang="pt-br">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escHtml(title)}</title>
-<style>
-  :root{
-    --bg1:#0b1020; --bg2:#111a33;
-    --text: rgba(255,255,255,.92);
-    --muted: rgba(255,255,255,.65);
-    --stroke: rgba(255,255,255,.18);
-    --shadow: 0 18px 50px rgba(0,0,0,.45);
-    --r: 18px;
-    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
-  }
-  *{box-sizing:border-box}
-  body{
-    margin:0; color:var(--text); min-height:100vh; overflow:hidden;
-    background:
-      radial-gradient(1100px 800px at 25% 20%, #24346b 0%, transparent 60%),
-      radial-gradient(1000px 750px at 80% 25%, #6b235e 0%, transparent 55%),
-      linear-gradient(135deg, var(--bg1), var(--bg2));
-  }
-  .desktop{position:relative; height:100vh; padding:18px 18px 64px;}
-  .icons{display:flex; gap:12px; flex-wrap:wrap; max-width:520px;}
-  .icon{
-    width:110px; padding:10px; border-radius:16px;
-    background: rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12);
-    cursor:pointer; text-align:center;
-  }
-  .icon:hover{ background: rgba(255,255,255,.10); }
-  .glyph{font-size:22px; margin-bottom:6px;}
-  .label{font-size:12px; color: rgba(255,255,255,.86);}
-  .taskbar{
-    position:absolute; left:14px; right:14px; bottom:12px; height:46px;
-    border-radius: 18px; background: rgba(255,255,255,.08);
-    border:1px solid rgba(255,255,255,.16); backdrop-filter: blur(14px);
-    box-shadow: var(--shadow);
-    display:flex; align-items:center; padding:8px 10px; justify-content:space-between;
-  }
-  .btn{
-    border-radius: 14px; border:1px solid rgba(255,255,255,.18);
-    background: rgba(255,255,255,.10);
-    color: var(--text); padding:10px 12px; cursor:pointer; font-size:13px;
-  }
-  .btn:hover{ background: rgba(255,255,255,.14); }
-  .win{
-    position:absolute; left: 18px; top: 18px;
-    width: min(860px, calc(100% - 36px));
-    height: min(560px, calc(100% - 110px));
-    border-radius: 22px; background: rgba(20,20,30,.62);
-    border:1px solid rgba(255,255,255,.18); box-shadow: var(--shadow);
-    backdrop-filter: blur(14px); overflow:auto; display:none;
-  }
-  .win.open{display:block;}
-  .winH{padding:12px 14px; border-bottom:1px solid rgba(255,255,255,.10); display:flex; justify-content:space-between; align-items:center;}
-  .winT{font-size:13px; color:rgba(255,255,255,.88)}
-  .winB{padding:14px;}
-  .muted{color:var(--muted); font-size:12px; line-height:1.45}
-  .grid{display:grid; gap:10px; margin-top:10px;}
-  .overlay{
-    position:absolute; inset:0; display:none; place-items:center;
-    background: rgba(0,0,0,.65);
-    padding:18px;
-  }
-  .overlay.open{display:grid;}
-  .panel{
-    width:min(720px, 100%);
-    border-radius: 22px; background: rgba(20,20,30,.78);
-    border:1px solid rgba(255,255,255,.18); box-shadow: var(--shadow);
-    padding:18px;
-  }
-  #lock{
-    position:absolute; inset:0; display:grid; place-items:center; padding:18px;
-    background: rgba(0,0,0,.50); backdrop-filter: blur(10px);
-    z-index: 10;
-  }
-  #lock .card{
-    width:min(560px, 100%);
-    border-radius:24px; background: rgba(20,20,30,.78);
-    border:1px solid rgba(255,255,255,.18); box-shadow: var(--shadow);
-    padding:18px;
-  }
-  .row{display:flex; gap:10px; flex-wrap:wrap;}
-  input{
-    flex:1; min-width:220px;
-    border-radius: 14px; border:1px solid rgba(255,255,255,.18);
-    background: rgba(0,0,0,.22); color: rgba(255,255,255,.92);
-    padding:12px 14px; outline:none; font-size:14px;
-  }
-  .err{display:none; margin-top:10px; color: rgba(255,120,120,.95); font-size:12px;}
-</style>
-</head>
-<body>
-  <div class="desktop">
-    <div class="icons">
-      <div class="icon" id="openMem">
-        <div class="glyph">🗂️</div>
-        <div class="label">memórias</div>
-      </div>
-      <div class="icon" id="openFinal">
-        <div class="glyph">🔒</div>
-        <div class="label">encerrar sessão</div>
-      </div>
-    </div>
-
-    <div class="win" id="winMem">
-      <div class="winH">
-        <div class="winT">📁 memórias</div>
-        <button class="btn" id="closeMem">Fechar</button>
-      </div>
-      <div class="winB">
-        <div class="muted">Aqui estão algumas lembranças…</div>
-        <div class="grid">
-          ${memItems || `<div class="muted">Adicione fotos no builder e exporte 😊</div>`}
-        </div>
-      </div>
-    </div>
-
-    <div class="overlay" id="ov">
-      <div class="panel">
-        <div style="font-size:18px; margin-bottom:8px;">Encerrando sessão…</div>
-        <div style="white-space:pre-wrap; line-height:1.6;">${escHtml(final)}</div>
-        <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
-          <button class="btn" id="back">Voltar</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="taskbar">
-      <div class="muted">🧡 ${escHtml(title)}</div>
-      <div class="muted" id="clock"></div>
-    </div>
-  </div>
-
-  <div id="lock">
-    <div class="card">
-      <div style="font-size:18px; margin:0 0 6px 0;">🔐 ${escHtml(title)} — Tela de Senha</div>
-      <div class="muted" style="margin-bottom:12px;">Acesso restrito: somente a dona do meu coração.</div>
-      <div class="row">
-        <input id="pw" type="password" placeholder="Digite a senha…" autocomplete="off" />
-        <button class="btn" id="enter">Entrar</button>
-      </div>
-      <div class="err" id="err">Senha incorreta. Tenta de novo 🥺</div>
-      <div style="margin-top:12px; padding:12px; border-radius:16px; border:1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.18);" class="muted">
-        <b>Dica:</b> ${escHtml(hint)}
-      </div>
-    </div>
-  </div>
-
-<script>
-  const PASSWORD = ${JSON.stringify(String(password || ""))};
-
-  function normalize(s){
-    return String(s).trim().toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").replace(/\\s+/g," ");
-  }
-
-  const lock = document.getElementById("lock");
-  const pw = document.getElementById("pw");
-  const err = document.getElementById("err");
-
-  function tryLogin(){
-    const ok = normalize(pw.value) === normalize(PASSWORD);
-    if(ok){
-      lock.style.display = "none";
-      err.style.display = "none";
-      pw.value = "";
-    } else {
-      err.style.display = "block";
-    }
-  }
-  document.getElementById("enter").addEventListener("click", tryLogin);
-  pw.addEventListener("keydown", (e)=>{ if(e.key==="Enter") tryLogin(); });
-  setTimeout(()=>pw.focus(), 120);
-
-  const winMem = document.getElementById("winMem");
-  document.getElementById("openMem").addEventListener("dblclick", ()=> winMem.classList.add("open"));
-  document.getElementById("closeMem").addEventListener("click", ()=> winMem.classList.remove("open"));
-
-  const ov = document.getElementById("ov");
-  document.getElementById("openFinal").addEventListener("dblclick", ()=> ov.classList.add("open"));
-  document.getElementById("back").addEventListener("click", ()=> ov.classList.remove("open"));
-
-  function tick(){
-    const d = new Date();
-    document.getElementById("clock").textContent = String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
-  }
-  setInterval(tick, 1000); tick();
-<\/script>
-</body>
-</html>`;
-  }
-
-  // =============================
   // init
-  // =============================
-  renderThemes();
   renderForm();
   updatePreview();
 </script>
