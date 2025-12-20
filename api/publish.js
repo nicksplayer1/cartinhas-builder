@@ -1,7 +1,15 @@
  module.exports = async (req, res) => {
+  // (Opcional) CORS básico — ajuda se um dia você chamar de outro domínio
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+
   if (req.method !== "POST") {
-    res.status(405).json({ error: "Use POST" });
-    return;
+    return res.status(405).json({ error: "Use POST" });
   }
 
   try {
@@ -25,16 +33,19 @@
 
     if (!SUPABASE_URL || !KEY) {
       return res.status(500).json({
-        error: "Variáveis SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY não configuradas na Vercel."
+        error:
+          "Variáveis SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY não configuradas na Vercel.",
       });
     }
 
     const id =
-      (globalThis.crypto?.randomUUID?.() ||
-        `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+      globalThis.crypto?.randomUUID?.() ||
+      `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
     const path = `p/${id}/index.html`;
-    const uploadUrl = `${SUPABASE_URL}/storage/v1/object/cartinhas/${path}`;
+
+    // ✅ SEU BUCKET NO SUPABASE É "cartinha" (singular)
+    const uploadUrl = `${SUPABASE_URL}/storage/v1/object/cartinha/${path}`;
 
     const up = await fetch(uploadUrl, {
       method: "POST",
@@ -49,11 +60,13 @@
 
     if (!up.ok) {
       const txt = await up.text().catch(() => "");
-      return res.status(500).json({ error: `Falha upload: ${up.status} ${txt}` });
+      return res.status(500).json({
+        error: `Falha upload: ${up.status} ${txt}`,
+      });
     }
 
     // bucket precisa ser PUBLIC
-    const url = `${SUPABASE_URL}/storage/v1/object/public/cartinhas/${path}`;
+    const url = `${SUPABASE_URL}/storage/v1/object/public/cartinha/${path}`;
 
     return res.status(200).json({ url });
   } catch (e) {
