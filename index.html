@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Construtor de Cartinhas</title>
-
   <style>
     :root{
       --bg:#0b1020; --panel: rgba(255,255,255,.06);
@@ -55,11 +54,7 @@
     .card-h .t{font-size:13px; color:var(--text); opacity:.95}
     .card-b{padding:12px}
     .grid{display:grid; gap:10px;}
-    .themes{
-      display:grid;
-      grid-template-columns: 1fr;
-      gap:10px;
-    }
+    .themes{display:grid; grid-template-columns: 1fr; gap:10px;}
     .theme{
       padding:12px;
       border-radius: 16px;
@@ -91,7 +86,7 @@
       font-size:13px;
     }
     textarea{min-height: 88px; resize:vertical;}
-    .row2{display:grid; grid-template-columns: 1fr 1fr; gap:10px;}
+
     .btn{
       border-radius: 14px;
       border:1px solid rgba(255,255,255,.16);
@@ -101,76 +96,42 @@
       cursor:pointer;
       font-size:13px;
       display:inline-flex; gap:8px; align-items:center;
-      user-select:none;
     }
     .btn:hover{ background: rgba(255,255,255,.14); }
     .btn:disabled{ opacity:.5; cursor:not-allowed; }
     .hint{font-size:12px; color:var(--muted); line-height:1.45}
 
     .preview{
-      height: calc(100vh - 116px);
+      height: calc(100vh - 108px);
       width:100%;
       border:0;
       border-radius: 16px;
       background: rgba(0,0,0,.15);
     }
 
-    .bar{
-      display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;
-    }
+    .bar{display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; align-items:center;}
 
     .toast{
-      position:fixed;
-      left:12px; right:12px; bottom:12px;
-      margin:0 auto;
-      max-width: 720px;
-      padding:12px 14px;
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      max-width: min(520px, calc(100% - 32px));
       border-radius: 16px;
       border:1px solid rgba(255,255,255,.16);
-      background: rgba(20,20,30,.78);
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(12px);
-      display:none;
-      z-index:9999;
-      font-size:13px;
-      color: rgba(255,255,255,.90);
-    }
-    .toast.show{display:block;}
-
-    .modal{
-      position:fixed; inset:0;
-      display:none;
-      place-items:center;
-      padding:18px;
-      background: rgba(0,0,0,.68);
-      z-index:9998;
-    }
-    .modal.open{display:grid;}
-    .modal .panel{
-      width:min(720px, 100%);
-      border-radius: 22px;
       background: rgba(20,20,30,.82);
-      border:1px solid rgba(255,255,255,.18);
       box-shadow: var(--shadow);
-      padding:16px;
-      backdrop-filter: blur(14px);
+      padding: 12px 12px;
+      display:none;
+      z-index: 999;
     }
-    .panel h2{margin:0 0 8px 0; font-size:16px;}
-    .panel p{margin:0; color:var(--muted); font-size:12px; line-height:1.45;}
-    .panel .row{display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;}
-    .linkbox{
-      margin-top:12px;
-      padding:12px;
-      border-radius: 16px;
-      border:1px solid rgba(255,255,255,.14);
-      background: rgba(0,0,0,.20);
-      word-break: break-all;
-      font-size: 13px;
-    }
+    .toast.open{display:block;}
+    .toast .title{font-size:13px; margin-bottom:6px;}
+    .toast .row{display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;}
+    .toast a{color: rgba(255,255,255,.92); word-break:break-all}
 
     @media (max-width: 980px){
       .wrap{grid-template-columns: 1fr; }
-      .preview{height: 65vh;}
+      .preview{height: 66vh;}
     }
   </style>
 
@@ -178,12 +139,11 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
 </head>
-
 <body>
   <header>
     <div class="brand">
       <h1>🧩 Construtor de Cartinhas</h1>
-      <p>Escolha um tema, preencha e exporte um ZIP (index.html + imagens/). Ou publique pra gerar um link.</p>
+      <p>Escolha um tema, preencha e exporte um ZIP (index.html + imagens/). Ou publique para gerar um link.</p>
     </div>
     <div class="bar">
       <button class="btn" id="btnPublish">🌐 Publicar (gerar link)</button>
@@ -207,7 +167,7 @@
       <div class="card-b">
         <div class="grid" id="form"></div>
         <div class="hint" style="margin-top:10px;">
-          Dica: no celular, escolha as fotos e aguarde carregar. Se não aparecer no preview, troque a foto e tente de novo.
+          Dica (celular): selecione as fotos e aguarde carregar. Se não aparecer no preview, troque o arquivo e tente de novo.
         </div>
       </div>
     </div>
@@ -218,26 +178,16 @@
         <div class="hint">Atualiza automaticamente</div>
       </div>
       <div class="card-b">
-        <!-- IMPORTANTE:
-             allow-scripts é necessário pro preview (tema HeartOS tem JS).
-             NÃO colocamos allow-same-origin pra evitar o warning "escapar sandbox". -->
+        <!-- IMPORTANTE: apenas allow-scripts (sem allow-same-origin) para não aparecer o aviso de sandbox -->
         <iframe class="preview" id="preview" sandbox="allow-scripts"></iframe>
       </div>
     </div>
   </div>
 
-  <div class="toast" id="toast"></div>
-
-  <div class="modal" id="modal">
-    <div class="panel">
-      <h2>✅ Link gerado</h2>
-      <p>Copie e envie no WhatsApp/Instagram. Quem abrir já vê a cartinha.</p>
-      <div class="linkbox" id="modalLink">...</div>
-      <div class="row">
-        <button class="btn" id="btnCopy">📋 Copiar link</button>
-        <button class="btn" id="btnClose">Fechar</button>
-      </div>
-    </div>
+  <div class="toast" id="toast">
+    <div class="title" id="toastTitle">Pronto</div>
+    <div class="hint" id="toastMsg"></div>
+    <div class="row" id="toastRow"></div>
   </div>
 
 <script>
@@ -246,18 +196,42 @@
   // =============================
   const $ = (s) => document.querySelector(s);
 
-  function toast(msg, ms=2500){
-    const t = $("#toast");
-    t.textContent = msg;
-    t.classList.add("show");
-    clearTimeout(toast._t);
-    toast._t = setTimeout(()=> t.classList.remove("show"), ms);
+  function escHtml(s){
+    return String(s ?? "").replace(/[&<>"']/g, (m)=>( {
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    }[m] ));
+  }
+  function escAttr(s){
+    return String(s ?? "").replace(/"/g, "&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+  function safeName(name){
+    return String(name || "imagem.jpg").replace(/[^\w.\-]+/g, "_");
   }
 
-  function escHtml(s){
-    return String(s ?? "").replace(/[&<>"']/g, (m)=>({
-      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
-    }[m]));
+  function showToast(title, msg, actions = []){
+    const t = $("#toast");
+    $("#toastTitle").textContent = title || "OK";
+    $("#toastMsg").textContent = msg || "";
+    const row = $("#toastRow");
+    row.innerHTML = "";
+    actions.forEach(a=>{
+      const el = document.createElement(a.tag || "button");
+      if(a.tag === "a"){
+        el.href = a.href;
+        el.target = "_blank";
+        el.rel = "noopener";
+        el.textContent = a.text;
+      } else {
+        el.className = "btn";
+        el.textContent = a.text;
+        el.addEventListener("click", a.onClick);
+      }
+      if(a.tag !== "a") el.className = "btn";
+      row.appendChild(el);
+    });
+    t.classList.add("open");
+    clearTimeout(showToast._to);
+    showToast._to = setTimeout(()=> t.classList.remove("open"), 12000);
   }
 
   function makeInput(field, value, onChange){
@@ -265,8 +239,8 @@
     const id = "f_" + field.key;
 
     wrap.innerHTML = `<label for="${id}">${escHtml(field.label)}</label>`;
-
     let el;
+
     if(field.type === "textarea"){
       el = document.createElement("textarea");
       el.id = id;
@@ -306,7 +280,6 @@
       h.textContent = field.help;
       wrap.appendChild(h);
     }
-
     return wrap;
   }
 
@@ -319,10 +292,6 @@
     });
   }
 
-  function safeName(name){
-    return String(name || "imagem.jpg").replace(/[^\w.\-]+/g, "_");
-  }
-
   // =============================
   // Temas
   // =============================
@@ -330,24 +299,15 @@
     heartos: {
       emoji: "💻",
       name: "HeartOS (mini)",
-      desc: "Mini “sistema” com pasta memórias + carta final (opcionalmente com senha).",
-      hint: "Dica: você pode DESLIGAR a senha no campo “Ativar senha”.",
+      desc: "Tela de senha + pasta memórias com fotos + carta final.",
+      hint: "A senha aceita exatamente o que você colocar em “Senha”.",
       fields: [
-        { key:"lock", label:"Ativar senha", type:"select",
-          options:[{label:"Não", value:"nao"},{label:"Sim", value:"sim"}],
-          help:"Se ativar, a pessoa precisa digitar a senha pra entrar." },
-
         { key:"password", label:"Senha", type:"text", placeholder:"ex: mohmoh" },
         { key:"hint", label:"Dica da senha", type:"text", placeholder:"ex: qual o nosso nome?" },
-
         { key:"title", label:"Título do sistema", type:"text", placeholder:"ex: HeartOS", help:"Aparece no topo." },
         { key:"final", label:"Carta final", type:"textarea", help:"Mensagem que aparece em “Encerrar sessão”." },
-
-        { key:"photos", label:"Fotos (até 6)", type:"files", accept:"image/*", multiple:true,
-          help:"As fotos irão para a pasta memórias." },
-
-        { key:"captions", label:"Legendas (uma por linha)", type:"textarea",
-          help:"Digite 1 legenda por linha, na ordem das fotos." }
+        { key:"photos", label:"Fotos (até 6)", type:"files", accept:"image/*", multiple:true, help:"As fotos irão para a pasta memórias." },
+        { key:"captions", label:"Legendas (uma por linha)", type:"textarea", help:"Digite 1 legenda por linha, na ordem das fotos." }
       ],
       generate: (data, assets, mode) => generateHeartOS(data, assets, mode)
     },
@@ -356,7 +316,7 @@
       emoji: "⚖️",
       name: "Processo Fofo",
       desc: "Página única estilo “tribunal do coração” + galeria.",
-      hint: "Ótimo pra humor e romance juntos.",
+      hint: "Ótimo para humor e romance juntos.",
       fields: [
         { key:"accused", label:"Nome do(a) acusado(a)", type:"text", placeholder:"ex: minha princesa" },
         { key:"charge", label:"Acusação", type:"text", placeholder:"ex: ser absolutamente inesquecível" },
@@ -371,7 +331,7 @@
       emoji: "💌",
       name: "Convite Formal",
       desc: "Convite elegante com data/hora/local e RSVP.",
-      hint: "Perfeito pra jantar, encontro surpresa, aniversário etc.",
+      hint: "Perfeito para jantar, encontro surpresa, aniversário etc.",
       fields: [
         { key:"eventTitle", label:"Título do convite", type:"text", placeholder:"ex: Convite Especial" },
         { key:"to", label:"Para", type:"text", placeholder:"ex: mohmohzinho" },
@@ -394,8 +354,7 @@
 
   const state = {
     heartos: {
-      lock: "nao",
-      password: "",
+      password: "mohmoh",
       hint: "qual o nosso nome?",
       title: "HeartOS",
       final: "Antes de desligar…\neu só queria deixar registrado:\nvocê é o tipo de pessoa que eu não quero “fechar a aba”. 💗",
@@ -419,7 +378,7 @@
     }
   };
 
-  // arquivos do usuário
+  // assets por tema
   const assets = {
     heartos: { photos: [] },
     processo: { photos: [] },
@@ -459,7 +418,6 @@
     form.innerHTML = "";
 
     const data = state[themeId] || (state[themeId] = {});
-
     t.fields.forEach(field=>{
       const el = makeInput(field, data[field.key], async (field, inputEl)=>{
         if(field.type === "files"){
@@ -517,61 +475,67 @@
 
     const blob = await zip.generateAsync({type:"blob"});
     saveAs(blob, `cartinha_${themeId}.zip`);
-    toast("ZIP exportado ✅");
   }
 
   async function publish(){
-    const t = THEMES[themeId];
-    const data = state[themeId] || {};
+    // Publicar só funciona no domínio (Vercel), não no arquivo local file://
+    if(location.protocol === "file:"){
+      showToast("Publicar não disponível", "Abra este construtor pelo link do Vercel para publicar (no file:// não dá).");
+      return;
+    }
 
-    // No publish a gente EMBUTE imagens (dataURL), pra virar um único index.html.
-    const html = t.generate(data, assets[themeId], "publish");
+    const btn = $("#btnPublish");
+    btn.disabled = true;
+    btn.textContent = "⏳ Publicando...";
 
-    $("#btnPublish").disabled = true;
-    $("#btnPublish").textContent = "⏳ Publicando...";
     try{
+      const t = THEMES[themeId];
+      const data = state[themeId] || {};
+      const html = t.generate(data, assets[themeId], "export"); // export mode (./imagens/)
       const r = await fetch("/api/publish", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type":"application/json" },
         body: JSON.stringify({ html })
       });
 
-      const j = await r.json().catch(()=>null);
+      const j = await r.json().catch(()=> ({}));
       if(!r.ok){
-        throw new Error(j?.error || ("Erro HTTP " + r.status));
+        throw new Error(j?.error || ("Falha ao publicar: HTTP " + r.status));
       }
 
-      const url = j?.url;
-      if(!url) throw new Error("API não retornou 'url'.");
+      const url = j.url;
+      showToast(
+        "Publicado ✅",
+        "Copie e envie esse link no WhatsApp/Instagram:",
+        [
+          {
+            text: "Copiar link",
+            onClick: async ()=>{
+              try{
+                await navigator.clipboard.writeText(url);
+                showToast("Copiado ✅", "Link copiado para a área de transferência.");
+              } catch {
+                showToast("Ops…", "Não consegui copiar automaticamente. Copie manualmente no texto do link.");
+              }
+            }
+          },
+          { tag:"a", href: url, text:"Abrir link" }
+        ]
+      );
 
-      $("#modalLink").textContent = url;
-      $("#modal").classList.add("open");
-      toast("Link gerado ✅");
-    } catch(e){
-      toast("Falha ao publicar: " + String(e.message || e), 4200);
-    } finally{
-      $("#btnPublish").disabled = false;
-      $("#btnPublish").textContent = "🌐 Publicar (gerar link)";
+      // também mostra o link no texto (pra copiar manualmente fácil)
+      $("#toastMsg").innerHTML = `Link: <a href="${escAttr(url)}" target="_blank" rel="noopener">${escHtml(url)}</a>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "🌐 Publicar (gerar link)";
     }
   }
 
   $("#btnExport").addEventListener("click", exportZip);
   $("#btnPublish").addEventListener("click", publish);
 
-  $("#btnClose").addEventListener("click", ()=> $("#modal").classList.remove("open"));
-  $("#modal").addEventListener("click", (e)=>{ if(e.target.id === "modal") $("#modal").classList.remove("open"); });
-  $("#btnCopy").addEventListener("click", async ()=>{
-    const link = $("#modalLink").textContent.trim();
-    try{
-      await navigator.clipboard.writeText(link);
-      toast("Link copiado 📋");
-    } catch{
-      toast("Não consegui copiar automático. Selecione e copie manualmente.", 3800);
-    }
-  });
-
   // =============================
-  // Templates
+  // Templates (geradores)
   // =============================
   function baseDoc(title, body, extraCss=""){
     return `<!doctype html>
@@ -629,10 +593,8 @@ ${body}
     const photos = (a.photos || []).slice(0, 10);
 
     const imgs = photos.map(f=>{
-      const src = (mode === "export")
-        ? `./imagens/${safeName(f.name)}`
-        : (f._dataUrl || "");
-      return `<img src="${src}" alt="" style="width:100%; border-radius:16px; border:1px solid rgba(255,255,255,.12);" />`;
+      const src = mode === "preview" ? (f._dataUrl || "") : `./imagens/${safeName(f.name)}`;
+      return `<img src="${escAttr(src)}" alt="" style="width:100%; border-radius:16px; border:1px solid rgba(255,255,255,.12);" />`;
     }).join("");
 
     return baseDoc("Processo Fofo", `
@@ -679,10 +641,11 @@ ${body}
 
   function generateConvite(data, a, mode){
     const cover = a.cover;
-
     const coverSrc = cover
-      ? ((mode === "export") ? `./imagens/${safeName(cover.name)}` : (cover._dataUrl || ""))
+      ? (mode === "preview" ? (cover._dataUrl || "") : `./imagens/${safeName(cover.name)}`)
       : "";
+
+    const rsvp = (data.rsvp || "").trim();
 
     return baseDoc("Convite", `
       <div class="card">
@@ -693,7 +656,7 @@ ${body}
         <div class="b">
           ${coverSrc ? `
             <div style="margin-bottom:12px; border-radius:18px; overflow:hidden; border:1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.18);">
-              <img src="${coverSrc}" alt="" style="width:100%; display:block;">
+              <img src="${escAttr(coverSrc)}" alt="" style="width:100%; display:block;">
             </div>
           ` : ""}
 
@@ -714,7 +677,7 @@ ${body}
               <div style="font-size:15px;">${escHtml(data.location || "")}</div>
             </div>
 
-            ${data.dress ? `
+            ${(data.dress || "").trim() ? `
               <div style="padding:14px; border-radius:18px; border:1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.18);">
                 <div class="muted">Traje</div>
                 <div style="font-size:15px;">${escHtml(data.dress)}</div>
@@ -726,8 +689,8 @@ ${body}
               <div style="white-space:pre-wrap; line-height:1.6;">${escHtml(data.message || "")}</div>
             </div>
 
-            ${data.rsvp ? `
-              <a href="${escHtml(data.rsvp)}" style="
+            ${rsvp ? `
+              <a href="${escAttr(rsvp)}" style="
                 display:inline-block; text-decoration:none; color: rgba(255,255,255,.92);
                 padding:12px 14px; border-radius: 999px;
                 border:1px solid rgba(255,255,255,.18);
@@ -742,35 +705,28 @@ ${body}
 
   function generateHeartOS(data, a, mode){
     const title = data.title || "HeartOS";
-    const lockMode = String(data.lock || "nao");
-    const password = String(data.password || "");
+    const password = data.password || "";
     const hint = data.hint || "dica";
     const final = data.final || "";
-
-    // Se não tiver senha, desliga lock automaticamente:
-    const ENABLE_LOCK = (lockMode === "sim") && password.trim().length > 0;
 
     const photos = (a.photos || []).slice(0, 6);
     const captions = (data.captions || "").split("\n").map(s=>s.trim());
 
     const memItems = photos.map((f, idx)=>{
-      const src = (mode === "export")
-        ? `./imagens/${safeName(f.name)}`
-        : (f._dataUrl || "");
-
+      const src = mode === "preview" ? (f._dataUrl || "") : `./imagens/${safeName(f.name)}`;
       const cap = captions[idx] || "";
       return `
         <div style="border-radius:18px; overflow:hidden; border:1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.18);">
-          <img src="${src}" alt="" style="width:100%; display:block;">
+          <img src="${escAttr(src)}" alt="" style="width:100%; display:block;">
           ${cap ? `<div style="padding:10px 12px; color:rgba(255,255,255,.75); font-size:12px; border-top:1px solid rgba(255,255,255,.10);">${escHtml(cap)}</div>` : ``}
         </div>
       `;
     }).join("");
 
-    // ⚠️ MUITO IMPORTANTE:
-    // Aqui dentro a gente ESCAPA o fechamento </script> como <\/script>
-    // pra não quebrar o <script> do construtor.
-    const html = `<!doctype html>
+    // ⚠️ SUPER IMPORTANTE:
+    // Dentro desta template string NÃO pode existir o texto literal </script>
+    // por isso o fechamento abaixo é <\/script>
+    return `<!doctype html>
 <html lang="pt-br">
 <head>
 <meta charset="utf-8">
@@ -843,11 +799,8 @@ ${body}
     border:1px solid rgba(255,255,255,.18); box-shadow: var(--shadow);
     padding:18px;
   }
-
-  /* lockscreen */
   #lock{
-    position:absolute; inset:0; display:${ENABLE_LOCK ? "grid" : "none"};
-    place-items:center; padding:18px;
+    position:absolute; inset:0; display:grid; place-items:center; padding:18px;
     background: rgba(0,0,0,.50); backdrop-filter: blur(10px);
     z-index: 10;
   }
@@ -925,16 +878,12 @@ ${body}
   </div>
 
 <script>
-  const ENABLE_LOCK = ${JSON.stringify(ENABLE_LOCK)};
   const PASSWORD = ${JSON.stringify(String(password || ""))};
 
   function normalize(s){
-    return String(s).trim().toLowerCase()
-      .normalize("NFD").replace(/[\\u0300-\\u036f]/g, "")
-      .replace(/\\s+/g," ");
+    return String(s).trim().toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").replace(/\\s+/g," ");
   }
 
-  // lock
   const lock = document.getElementById("lock");
   const pw = document.getElementById("pw");
   const err = document.getElementById("err");
@@ -949,34 +898,26 @@ ${body}
       err.style.display = "block";
     }
   }
+  document.getElementById("enter").addEventListener("click", tryLogin);
+  pw.addEventListener("keydown", (e)=>{ if(e.key==="Enter") tryLogin(); });
+  setTimeout(()=>pw.focus(), 120);
 
-  if(ENABLE_LOCK){
-    document.getElementById("enter").addEventListener("click", tryLogin);
-    pw.addEventListener("keydown", (e)=>{ if(e.key==="Enter") tryLogin(); });
-    setTimeout(()=>pw.focus(), 120);
-  }
-
-  // windows (clique simples — melhor no celular)
   const winMem = document.getElementById("winMem");
-  document.getElementById("openMem").addEventListener("click", ()=> winMem.classList.add("open"));
+  document.getElementById("openMem").addEventListener("dblclick", ()=> winMem.classList.add("open"));
   document.getElementById("closeMem").addEventListener("click", ()=> winMem.classList.remove("open"));
 
   const ov = document.getElementById("ov");
-  document.getElementById("openFinal").addEventListener("click", ()=> ov.classList.add("open"));
+  document.getElementById("openFinal").addEventListener("dblclick", ()=> ov.classList.add("open"));
   document.getElementById("back").addEventListener("click", ()=> ov.classList.remove("open"));
 
-  // clock
   function tick(){
     const d = new Date();
-    document.getElementById("clock").textContent =
-      String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+    document.getElementById("clock").textContent = String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
   }
   setInterval(tick, 1000); tick();
 <\/script>
 </body>
 </html>`;
-
-    return html;
   }
 
   // =============================
