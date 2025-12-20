@@ -4,9 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Construtor de Cartinha</title>
+
   <style>
     :root{
-      --bg:#0b1020;
       --stroke: rgba(255,255,255,.14);
       --text: rgba(255,255,255,.92);
       --muted: rgba(255,255,255,.68);
@@ -51,7 +51,7 @@
       display:flex; align-items:center; justify-content:space-between;
       gap:10px;
     }
-    .card-h .t{font-size:13px; color:var(--text); opacity:.95}
+    .card-h .t{font-size:13px; opacity:.95}
     .card-b{padding:12px}
     .grid{display:grid; gap:10px;}
 
@@ -120,6 +120,7 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
 </head>
+
 <body>
   <header>
     <div class="brand">
@@ -151,7 +152,8 @@
         <div class="hint">Atualiza automaticamente</div>
       </div>
       <div class="card-b">
-        <iframe class="preview" id="preview" sandbox="allow-scripts"></iframe>
+        <!-- sem allow-same-origin e sem allow-scripts desnecessário -->
+        <iframe class="preview" id="preview" sandbox=""></iframe>
       </div>
     </div>
   </div>
@@ -241,7 +243,6 @@
       h.textContent = help;
       wrap.appendChild(h);
     }
-
     return wrap;
   }
 
@@ -255,7 +256,7 @@
   }
 
   // =============================
-  // Estado (1 tema)
+  // Estado
   // =============================
   const state = {
     title: "Uma cartinha pra você 💗",
@@ -265,8 +266,8 @@
   };
 
   const assets = {
-    photo: null,      // File
-    photoDataUrl: ""  // DataURL para preview
+    photo: null,
+    photoDataUrl: ""
   };
 
   const FIELDS = [
@@ -274,21 +275,17 @@
     { key:"to", label:"Para", placeholder:"ex: Meu amor" },
     { key:"message", label:"Mensagem", type:"textarea", placeholder:"Digite sua cartinha aqui..." },
     { key:"from", label:"Assinatura", placeholder:"ex: Nicollas" },
-    { key:"photo", label:"Foto (opcional)", type:"file", help:"Essa foto aparece no topo da cartinha." },
+    { key:"photo", label:"Foto (opcional)", type:"file", help:"A foto aparece no topo da cartinha." },
   ];
 
-  // =============================
-  // Render form
-  // =============================
   function renderForm(){
     const form = $("#form");
     form.innerHTML = "";
-
     FIELDS.forEach(f=>{
       const value = (f.key in state) ? state[f.key] : "";
       const el = makeField(f, value, async (key, inputEl)=>{
         if(key === "photo"){
-          const file = (inputEl.files && inputEl.files[0]) ? inputEl.files[0] : null;
+          const file = inputEl.files && inputEl.files[0] ? inputEl.files[0] : null;
           assets.photo = file;
           assets.photoDataUrl = "";
           if(file){
@@ -304,7 +301,7 @@
   }
 
   // =============================
-  // Gerador da cartinha (SEM senha)
+  // Gerador da cartinha (sem <script> dentro!)
   // =============================
   function generateLetter(mode){
     const title = state.title || "";
@@ -318,8 +315,10 @@
           : `./imagens/${safeName(assets.photo.name)}`)
       : "";
 
-    // IMPORTANTE: dentro desta string não pode existir </script literal.
-    // A gente usa <\/script no final do script (mesmo não sendo necessário aqui, é uma segurança extra).
+    const photoHtml = photoSrc
+      ? `<img class="photo" src="${escAttr(photoSrc)}" alt="">`
+      : "";
+
     return `<!doctype html>
 <html lang="pt-br">
 <head>
@@ -375,15 +374,12 @@
     border-top:1px dashed rgba(255,255,255,.18);
     font-size:14px;
   }
-  .to{
-    margin-top:6px;
-    font-size:14px;
-  }
+  .to{margin-top:6px; font-size:14px;}
 </style>
 </head>
 <body>
   <div class="card">
-    ${photoSrc ? `<img class="photo" src="${escAttr(photoSrc)}" alt="">` : ``}
+    ${photoHtml}
     <div class="h">
       <h1 class="title">${escHtml(title)}</h1>
       <div class="to muted">Para: <b>${escHtml(to)}</b></div>
@@ -393,17 +389,10 @@
       <div class="sig muted">— ${escHtml(from)}</div>
     </div>
   </div>
-
-<script>
-  // (nada aqui, só mantendo o bloco caso você queira animações depois)
-<\/script>
 </body>
 </html>`;
   }
 
-  // =============================
-  // Preview / Export / Publish
-  // =============================
   function updatePreview(){
     $("#preview").srcdoc = generateLetter("preview");
   }
@@ -418,12 +407,13 @@
     }
 
     const blob = await zip.generateAsync({type:"blob"});
-    saveAs(blob, `cartinha.zip`);
+    saveAs(blob, "cartinha.zip");
   }
 
   async function publish(){
     if(location.protocol === "file:"){
-      showToast("Publicar não disponível", "Abra este construtor pelo link do Vercel para publicar (no file:// não dá).");
+      showToast("Publicar não disponível",
+        "Abra este construtor pelo link do Vercel (não no file://) para publicar.");
       return;
     }
 
@@ -433,6 +423,7 @@
 
     try{
       const html = generateLetter("export");
+
       const r = await fetch("/api/publish", {
         method: "POST",
         headers: { "content-type":"application/json" },
@@ -455,7 +446,7 @@
                 await navigator.clipboard.writeText(url);
                 showToast("Copiado ✅", "Link copiado para a área de transferência.");
               } catch {
-                showToast("Ops…", "Não consegui copiar automaticamente. Copie manualmente no texto do link.");
+                showToast("Ops…", "Não consegui copiar automaticamente. Copie manualmente o link.");
               }
             }
           },
