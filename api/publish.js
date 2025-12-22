@@ -1,19 +1,20 @@
- module.exports = async (req, res) => {
-  // (Opcional) CORS básico — ajuda se um dia você chamar de outro domínio
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-  if (req.method === "OPTIONS") {
-    return res.status(204).end();
-  }
-
+module.exports = async (req, res) => {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Use POST" });
   }
 
   try {
-    // Garantir body parseado
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const BUCKET = process.env.SUPABASE_BUCKET || "cartinha"; // ajuste se necessário
+
+    if (!SUPABASE_URL || !KEY) {
+      return res.status(500).json({
+        error: "Variáveis SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY não configuradas na Vercel.",
+      });
+    }
+
+    // garantir body parseado
     let body = req.body;
     if (!body) body = {};
     if (typeof body === "string") body = JSON.parse(body);
@@ -23,29 +24,19 @@
       return res.status(400).json({ error: "Campo 'html' obrigatório" });
     }
 
-    // Limite de tamanho (evita abuso/fotos gigantes)
+    // limite de tamanho (evita abuso)
     if (html.length > 15_000_000) {
-      return res.status(413).json({ error: "Arquivo muito grande. Reduza as fotos." });
-    }
-
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!SUPABASE_URL || !KEY) {
-      return res.status(500).json({
-        error:
-          "Variáveis SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY não configuradas na Vercel.",
-      });
+      return res.status(413).json({ error: "Arquivo muito grande. Reduza fotos." });
     }
 
     const id =
-      globalThis.crypto?.randomUUID?.() ||
-      `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      (globalThis.crypto?.randomUUID?.() ||
+        `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 
     const path = `p/${id}/index.html`;
 
-    // ✅ SEU BUCKET NO SUPABASE É "cartinha" (singular)
-    const uploadUrl = `${SUPABASE_URL}/storage/v1/object/cartinha/${path}`;
+    // Upload no Supabase Storage
+    const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`;
 
     const up = await fetch(uploadUrl, {
       method: "POST",
@@ -60,17 +51,16 @@
 
     if (!up.ok) {
       const txt = await up.text().catch(() => "");
-      return res.status(500).json({
-        error: `Falha upload: ${up.status} ${txt}`,
-      });
+      return res.status(500).json({ error: `Falha upload: ${up.status} ${txt}` });
     }
 
-    // bucket precisa ser PUBLIC
-    const url = `${SUPABASE_URL}/storage/v1/object/public/cartinha/${path}`;
+    // monta a URL final (Vercel) que renderiza HTML corretamente
+    const proto = req.headers["x-forwarded-proto"] || "https";
+    const host = req.headers["x-forwarded-host"] || req.headers.host;
+    const viewUrl = `${proto}://${host}/api/view?id=${encodeURIComponent(id)}`;
 
-    return res.status(200).json({ url });
+    return res.status(200).json({ id, url: viewUrl });
   } catch (e) {
     return res.status(500).json({ error: String(e?.message || e) });
   }
 };
-
