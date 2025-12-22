@@ -109,16 +109,17 @@
     .theme .name{font-size:13px; margin:0}
     .theme .desc{font-size:12px; color:var(--muted); margin:4px 0 0}
 
-    /* EXPANDED PANEL (form inside theme) */
-    .theme-panel{
-      margin-top:10px;
+    /* PANEL (aparece só quando escolhe tema) */
+    .panel{
+      margin-top:12px;
       padding:12px;
       border-radius: 16px;
       border:1px solid rgba(255,255,255,.12);
       background: rgba(0,0,0,.18);
       display:none;
     }
-    .theme-panel.open{display:block;}
+    .panel.open{display:block;}
+
     .hint{font-size:12px; color:var(--muted); line-height:1.45}
 
     label{font-size:12px; color:var(--muted)}
@@ -178,11 +179,11 @@
   <header>
     <div class="brand">
       <h1>💌 Construtor de Cartinhas</h1>
-      <p>Escolha um tema, clique nele pra abrir as opções, veja o preview, exporte um ZIP ou publique pra gerar um link.</p>
+      <p>Escolha um tema, edite os campos, veja o preview, exporte um ZIP ou publique pra gerar um link.</p>
     </div>
     <div class="bar">
-      <button class="btn" id="btnPublish">🌐 Publicar (gerar link)</button>
-      <button class="btn" id="btnExport">⬇️ Exportar ZIP</button>
+      <button class="btn" id="btnPublish" disabled>🌐 Publicar (gerar link)</button>
+      <button class="btn" id="btnExport" disabled>⬇️ Exportar ZIP</button>
     </div>
   </header>
 
@@ -190,12 +191,17 @@
     <div class="card">
       <div class="card-h">
         <div class="t">🎭 Temas</div>
-        <div class="hint" id="themesHint">Toque em um tema pra abrir e editar.</div>
       </div>
       <div class="card-b">
         <div class="themes" id="themes"></div>
-        <div class="hint" style="margin-top:10px;">
-          Dica (celular): escolha a foto e aguarde carregar. Se não aparecer no preview, selecione de novo.
+
+        <!-- Painel que só aparece ao clicar em um tema -->
+        <div class="panel" id="panel">
+          <div class="hint" id="panelHint" style="margin-bottom:10px;"></div>
+          <div class="grid" id="form"></div>
+          <div class="hint" style="margin-top:10px;">
+            Dica (celular): selecione a foto e aguarde carregar. Se não aparecer no preview, selecione de novo.
+          </div>
         </div>
       </div>
     </div>
@@ -247,14 +253,14 @@
   }
 
   // =============================
-  // Temas
+  // Temas (2 temas simples)
   // =============================
   const THEMES = {
     amor: {
       emoji: "💌",
       name: "Cartinha de Amor",
-      desc: "Uma carta simples e linda (com foto opcional).",
-      hint: "Este é o tema padrão. Depois você adiciona outros (convite, processo, tesouro...).",
+      desc: "Carta clara (branca) + foto opcional.",
+      hint: "Tema romântico com visual mais fácil de ler.",
       fields: [
         { key:"title", label:"Título", type:"text", placeholder:"Uma cartinha pra você ❤️" },
         { key:"to", label:"Para", type:"text", placeholder:"Meu amor" },
@@ -263,13 +269,26 @@
         { key:"photo", label:"Foto (opcional)", type:"file", accept:"image/*", help:"A foto aparece no topo da cartinha." }
       ],
       generate: (data, assets, mode) => generateCartinhaAmor(data, assets, mode)
+    },
+
+    simples: {
+      emoji: "✉️",
+      name: "Cartinha Simples",
+      desc: "Sem foto, só texto (bem direto).",
+      hint: "Perfeita pra recados rápidos, confissão simples, etc.",
+      fields: [
+        { key:"title", label:"Título", type:"text", placeholder:"Uma mensagem pra você" },
+        { key:"message", label:"Mensagem", type:"textarea", placeholder:"Escreva aqui..." },
+        { key:"sign", label:"Assinatura", type:"text", placeholder:"Seu nome" }
+      ],
+      generate: (data, assets, mode) => generateCartinhaSimples(data, assets, mode)
     }
   };
 
   // =============================
   // Estado
   // =============================
-  let themeId = "amor";
+  let openThemeId = null; // <- começa fechado (só abre quando clicar)
 
   const state = {
     amor: {
@@ -277,26 +296,30 @@
       to: "Meu amor",
       message: "Escreva aqui sua mensagem...\n\nCom carinho,\nEu ❤️",
       sign: "Seu nome"
+    },
+    simples: {
+      title: "Uma mensagem pra você",
+      message: "Escreva aqui sua mensagem...",
+      sign: "Seu nome"
     }
   };
 
   const assets = {
-    amor: { photo: null } // { file, dataUrl }
+    amor: { photo: null },     // { file, dataUrl }
+    simples: {}                // nada por enquanto
   };
 
   // =============================
-  // UI: render themes (tema abre e mostra formulário DENTRO)
+  // UI
   // =============================
   function renderThemes(){
     const root = $("#themes");
     root.innerHTML = "";
 
     Object.entries(THEMES).forEach(([id, t])=>{
-      const wrap = document.createElement("div");
-
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "theme" + (id === themeId ? " active" : "");
+      btn.className = "theme" + (id === openThemeId ? " active" : "");
       btn.innerHTML = `
         <div class="emoji">${t.emoji}</div>
         <div>
@@ -304,40 +327,56 @@
           <p class="desc">${escHtml(t.desc)}</p>
         </div>
       `;
+
       btn.addEventListener("click", ()=>{
-        themeId = id;
-        renderThemes();      // re-render pra abrir/fechar painel
-        updatePreview();
+        // toggle: se clicar no mesmo tema, fecha
+        openThemeId = (openThemeId === id) ? null : id;
+
+        // painel aparece só se houver tema aberto
+        syncPanel();
+        renderThemes();
+        if(openThemeId){
+          renderForm(openThemeId);
+          updatePreview();
+        } else {
+          clearPreview();
+        }
       });
 
-      const panel = document.createElement("div");
-      panel.className = "theme-panel" + (id === themeId ? " open" : "");
-      panel.innerHTML = `
-        <div class="hint" style="margin-bottom:10px;">${escHtml(t.hint || "")}</div>
-        <div class="grid" id="form_${id}"></div>
-      `;
-
-      wrap.appendChild(btn);
-      wrap.appendChild(panel);
-      root.appendChild(wrap);
-
-      // se esse é o tema ativo, renderiza o form dentro do painel
-      if(id === themeId){
-        renderFormInto(panel.querySelector(`#form_${id}`), id);
-      }
+      root.appendChild(btn);
     });
   }
 
-  function renderFormInto(container, id){
-    container.innerHTML = "";
+  function syncPanel(){
+    const panel = $("#panel");
+    const publishBtn = $("#btnPublish");
+    const exportBtn = $("#btnExport");
+
+    if(openThemeId){
+      panel.classList.add("open");
+      publishBtn.disabled = false;
+      exportBtn.disabled = false;
+    } else {
+      panel.classList.remove("open");
+      publishBtn.disabled = true;
+      exportBtn.disabled = true;
+      $("#form").innerHTML = "";
+      $("#panelHint").textContent = "";
+    }
+  }
+
+  function renderForm(id){
     const t = THEMES[id];
     const data = state[id] || (state[id] = {});
     const a = assets[id] || (assets[id] = {});
+    $("#panelHint").textContent = t.hint || "";
+
+    const form = $("#form");
+    form.innerHTML = "";
 
     t.fields.forEach(field=>{
       const block = document.createElement("div");
       const inputId = `f_${id}_${field.key}`;
-
       block.innerHTML = `<label for="${inputId}">${escHtml(field.label)}</label>`;
 
       let el;
@@ -387,47 +426,57 @@
         block.appendChild(h);
       }
 
-      container.appendChild(block);
+      form.appendChild(block);
     });
   }
 
-  // =============================
-  // Preview / Export / Publish
-  // =============================
-  function updatePreview(){
-    const t = THEMES[themeId];
-    const data = state[themeId] || {};
-    const html = t.generate(data, assets[themeId], "preview");
+  function clearPreview(){
+    const html = baseBuilderPreview("Escolha um tema", "Clique em um tema à esquerda para começar.");
     $("#preview").srcdoc = html;
   }
 
+  function updatePreview(){
+    if(!openThemeId) return clearPreview();
+    const t = THEMES[openThemeId];
+    const data = state[openThemeId] || {};
+    const html = t.generate(data, assets[openThemeId], "preview");
+    $("#preview").srcdoc = html;
+  }
+
+  // =============================
+  // Export / Publish
+  // =============================
   async function exportZip(){
-    const t = THEMES[themeId];
-    const data = state[themeId] || {};
+    if(!openThemeId) return;
+    const t = THEMES[openThemeId];
+    const data = state[openThemeId] || {};
     const zip = new JSZip();
 
-    const html = t.generate(data, assets[themeId], "export");
+    const html = t.generate(data, assets[openThemeId], "export");
     zip.file("index.html", html);
 
     const imgFolder = zip.folder("imagens");
-    const a = assets[themeId];
 
     // Tema "amor": uma foto opcional
-    if(a?.photo?.file){
-      imgFolder.file(safeName(a.photo.file.name), a.photo.file);
+    if(openThemeId === "amor"){
+      const a = assets.amor;
+      if(a?.photo?.file){
+        imgFolder.file(safeName(a.photo.file.name), a.photo.file);
+      }
     }
 
     const blob = await zip.generateAsync({type:"blob"});
-    saveAs(blob, `cartinha_${themeId}.zip`);
+    saveAs(blob, `cartinha_${openThemeId}.zip`);
   }
 
   async function publish(){
-    // Envia o HTML pronto pro endpoint /api/publish
-    const t = THEMES[themeId];
-    const data = state[themeId] || {};
-    const html = t.generate(data, assets[themeId], "publish"); // publish = usa DataURL (funciona no link)
-    const btn = $("#btnPublish");
+    if(!openThemeId) return;
 
+    const t = THEMES[openThemeId];
+    const data = state[openThemeId] || {};
+    const html = t.generate(data, assets[openThemeId], "publish"); // publish: usa DataURL, funciona no link
+
+    const btn = $("#btnPublish");
     btn.disabled = true;
     btn.textContent = "⏳ Publicando...";
 
@@ -438,9 +487,8 @@
         body: JSON.stringify({ html })
       });
       const j = await r.json().catch(()=> ({}));
-      if(!r.ok){
-        throw new Error(j.error || ("Erro " + r.status));
-      }
+      if(!r.ok) throw new Error(j.error || ("Erro " + r.status));
+
       const url = j.url;
       showToast(`✅ Link gerado: <a href="${escHtml(url)}" target="_blank" rel="noopener">abrir cartinha</a><br><span class="hint">Copie e envie no WhatsApp/Instagram.</span>`, 12000);
     }catch(e){
@@ -455,8 +503,44 @@
   $("#btnPublish").addEventListener("click", publish);
 
   // =============================
-  // Template do tema: Cartinha de Amor
+  // Templates (Preview)
   // =============================
+  function baseBuilderPreview(title, text){
+    return `<!doctype html>
+<html lang="pt-br"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escHtml(title)}</title>
+<style>
+  body{
+    margin:0; min-height:100vh;
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    color: rgba(255,255,255,.92);
+    background:
+      radial-gradient(1100px 800px at 25% 20%, #24346b 0%, transparent 60%),
+      radial-gradient(1000px 750px at 80% 25%, #6b235e 0%, transparent 55%),
+      linear-gradient(135deg, #0b1020, #111a33);
+    display:grid; place-items:center; padding:18px;
+  }
+  .box{
+    width:min(820px, 100%);
+    border-radius:22px;
+    background: rgba(20,20,30,.58);
+    border:1px solid rgba(255,255,255,.16);
+    box-shadow: 0 18px 50px rgba(0,0,0,.45);
+    backdrop-filter: blur(14px);
+    padding:18px;
+  }
+  h1{margin:0 0 8px 0; font-size:18px;}
+  p{margin:0; color: rgba(255,255,255,.72); line-height:1.5}
+</style>
+</head><body>
+  <div class="box">
+    <h1>${escHtml(title)}</h1>
+    <p>${escHtml(text)}</p>
+  </div>
+</body></html>`;
+  }
+
   function baseDoc(title, body, extraCss=""){
     return `<!doctype html>
 <html lang="pt-br">
@@ -467,35 +551,17 @@
 <style>
   :root{
     --bg1:#0b1020; --bg2:#111a33;
-    --text: rgba(255,255,255,.92);
-    --muted: rgba(255,255,255,.68);
-    --stroke: rgba(255,255,255,.16);
     --shadow: 0 18px 50px rgba(0,0,0,.45);
-    --r: 18px;
     font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
   }
   body{
-    margin:0; color:var(--text);
+    margin:0;
     background:
       radial-gradient(1100px 800px at 25% 20%, #24346b 0%, transparent 60%),
       radial-gradient(1000px 750px at 80% 25%, #6b235e 0%, transparent 55%),
       linear-gradient(135deg, var(--bg1), var(--bg2));
     min-height:100vh;
   }
-  .card{
-    width:min(860px, calc(100% - 32px));
-    margin: 18px auto;
-    border-radius: 22px;
-    background: rgba(20,20,30,.58);
-    border:1px solid var(--stroke);
-    box-shadow: var(--shadow);
-    backdrop-filter: blur(14px);
-    overflow:hidden;
-  }
-  .h{padding:14px 16px; border-bottom:1px solid rgba(255,255,255,.10);}
-  .b{padding:16px;}
-  .muted{color:var(--muted); font-size:12px; line-height:1.45}
-  .h1{margin:0; font-size:20px;}
   ${extraCss}
 </style>
 </head>
@@ -505,22 +571,21 @@ ${body}
 </html>`;
   }
 
+  // =============================
+  // Tema 1: Cartinha de Amor (branca)
+  // =============================
   function generateCartinhaAmor(data, a, mode){
     const title = data.title || "Uma cartinha pra você ❤️";
     const to = data.to || "";
     const message = data.message || "";
     const sign = data.sign || "";
 
-    // Foto:
-    // - preview/publish: DataURL (funciona em qualquer link)
-    // - export: ./imagens/nome.jpg (vai junto no ZIP)
     let photoSrc = "";
     if(a?.photo?.file){
       if(mode === "export"){
         photoSrc = `./imagens/${safeName(a.photo.file.name)}`;
       } else {
-        photoSrc홀 = a.photo.dataUrl || "";
-        photoSrc = photoSrc홀;
+        photoSrc = a.photo.dataUrl || "";
       }
     }
 
@@ -528,37 +593,123 @@ ${body}
       <div class="card">
         <div class="h">
           <div class="h1">${escHtml(title)}</div>
-          ${to ? `<div class="muted" style="margin-top:6px;">Para: <b>${escHtml(to)}</b></div>` : ``}
+          ${to ? `<div class="sub">Para: <b>${escHtml(to)}</b></div>` : ``}
         </div>
         <div class="b">
           ${photoSrc ? `
-            <div style="margin-bottom:12px; border-radius:18px; overflow:hidden; border:1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.18);">
-              <img src="${photoSrc}" alt="" style="width:100%; display:block;">
+            <div class="photo">
+              <img src="${photoSrc}" alt="" />
             </div>
           ` : ``}
 
-          <div style="
-            padding:16px;
-            border-radius:18px;
-            border:1px solid rgba(255,255,255,.12);
-            background: rgba(0,0,0,.18);
-            line-height:1.7;
-            white-space:pre-wrap;
-          ">${escHtml(message)}</div>
+          <div class="msg">${escHtml(message)}</div>
 
-          <div style="margin-top:14px; display:flex; justify-content:flex-end;">
-            <div class="muted" style="font-size:13px;">— ${escHtml(sign)}</div>
-          </div>
+          <div class="sign">— ${escHtml(sign)}</div>
         </div>
       </div>
+    `, `
+      /* CARTINHA BRANCA */
+      .card{
+        width:min(860px, calc(100% - 32px));
+        margin: 18px auto;
+        border-radius: 22px;
+        background: rgba(255,255,255,.96);
+        border:1px solid rgba(0,0,0,.08);
+        box-shadow: var(--shadow);
+        overflow:hidden;
+      }
+      .h{
+        padding:16px 18px;
+        border-bottom:1px solid rgba(0,0,0,.06);
+      }
+      .h1{margin:0; font-size:20px; color:#121212;}
+      .sub{margin-top:8px; color:#2a2a2a; font-size:13px;}
+      .b{padding:18px;}
+      .photo{
+        margin-bottom:12px;
+        border-radius:18px;
+        overflow:hidden;
+        border:1px solid rgba(0,0,0,.08);
+        background: #f5f5f5;
+      }
+      .photo img{width:100%; display:block;}
+      .msg{
+        padding:16px;
+        border-radius:18px;
+        border:1px solid rgba(0,0,0,.08);
+        background: rgba(0,0,0,.02);
+        color:#121212;
+        line-height:1.75;
+        white-space:pre-wrap;
+      }
+      .sign{
+        margin-top:14px;
+        text-align:right;
+        color:#2a2a2a;
+        font-size:14px;
+      }
     `);
   }
 
   // =============================
-  // init
+  // Tema 2: Cartinha Simples (sem foto)
+  // =============================
+  function generateCartinhaSimples(data, a, mode){
+    const title = data.title || "Uma mensagem pra você";
+    const message = data.message || "";
+    const sign = data.sign || "";
+
+    return baseDoc(title, `
+      <div class="card">
+        <div class="h">
+          <div class="h1">${escHtml(title)}</div>
+        </div>
+        <div class="b">
+          <div class="msg">${escHtml(message)}</div>
+          <div class="sign">— ${escHtml(sign)}</div>
+        </div>
+      </div>
+    `, `
+      .card{
+        width:min(860px, calc(100% - 32px));
+        margin: 18px auto;
+        border-radius: 22px;
+        background: rgba(20,20,30,.60);
+        border:1px solid rgba(255,255,255,.16);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(14px);
+        overflow:hidden;
+        color: rgba(255,255,255,.92);
+      }
+      .h{
+        padding:14px 16px;
+        border-bottom:1px solid rgba(255,255,255,.10);
+      }
+      .h1{margin:0; font-size:20px;}
+      .b{padding:16px;}
+      .msg{
+        padding:16px;
+        border-radius:18px;
+        border:1px solid rgba(255,255,255,.12);
+        background: rgba(0,0,0,.18);
+        line-height:1.75;
+        white-space:pre-wrap;
+      }
+      .sign{
+        margin-top:14px;
+        text-align:right;
+        color: rgba(255,255,255,.72);
+        font-size:14px;
+      }
+    `);
+  }
+
+  // =============================
+  // Init
   // =============================
   renderThemes();
-  updatePreview();
+  syncPanel();
+  clearPreview();
 </script>
 
 </body>
