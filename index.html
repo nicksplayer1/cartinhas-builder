@@ -122,6 +122,38 @@
       background: rgba(0,0,0,.12);
     }
 
+    /* Modal de compartilhar */
+    .modalBack{
+      position:fixed; inset:0;
+      background: rgba(0,0,0,.55);
+      display:none;
+      place-items:center;
+      padding:16px;
+      z-index:9999;
+    }
+    .modal{
+      width:min(560px, 100%);
+      border-radius: 18px;
+      background: rgba(20,20,30,.82);
+      border:1px solid rgba(255,255,255,.18);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+      overflow:hidden;
+    }
+    .modalH{padding:12px 14px; border-bottom:1px solid rgba(255,255,255,.10); display:flex; justify-content:space-between; align-items:center;}
+    .modalB{padding:14px;}
+    .rowBtns{display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;}
+    .linkBox{
+      width:100%;
+      padding:10px 12px;
+      border-radius: 14px;
+      border:1px solid rgba(255,255,255,.16);
+      background: rgba(0,0,0,.22);
+      color: rgba(255,255,255,.92);
+      font-size:13px;
+      word-break: break-all;
+    }
+
     @media (max-width: 980px){
       .wrap{grid-template-columns: 1fr; }
       .preview{height: 70vh;}
@@ -179,8 +211,28 @@
         <div class="hint">Atualiza automaticamente</div>
       </div>
       <div class="card-b">
-        <!-- ✅ Corrigido: permitimos scripts caso algum template tenha <script> -->
         <iframe class="preview" id="preview" sandbox="allow-same-origin allow-scripts"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal compartilhar -->
+  <div class="modalBack" id="modalBack">
+    <div class="modal">
+      <div class="modalH">
+        <div style="font-size:13px;">✅ Link gerado</div>
+        <button class="btn" id="btnCloseModal">✖️ Fechar</button>
+      </div>
+      <div class="modalB">
+        <div class="hint">Copie e mande no WhatsApp/Instagram. No celular, você pode usar “Compartilhar”.</div>
+        <div class="linkBox" id="shareLink" style="margin-top:10px;"></div>
+
+        <div class="rowBtns">
+          <button class="btn" id="btnCopy">📋 Copiar</button>
+          <a class="btn" id="btnOpen" target="_blank" rel="noopener">🔗 Abrir</a>
+          <a class="btn" id="btnWhats" target="_blank" rel="noopener">💬 WhatsApp</a>
+          <button class="btn" id="btnShare">📲 Compartilhar</button>
+        </div>
       </div>
     </div>
   </div>
@@ -259,7 +311,7 @@
       emoji: "💌",
       name: "Cartinha de Amor",
       desc: "Carta glass + foto opcional.",
-      hint: "Esse tema é ótimo pra Whats/Instagram (link) e também offline (ZIP).",
+      hint: "Ideal pra mandar por link (Whats/IG) ou exportar ZIP (offline).",
       fields: [
         { key:"title", label:"Título", placeholder:"Uma cartinha pra você ❤️" },
         { key:"to", label:"Para", placeholder:"Meu amor" },
@@ -274,7 +326,7 @@
       emoji: "✉️",
       name: "Cartinha Simples",
       desc: "Sem foto, só texto (bem direto).",
-      hint: "Ideal quando você quer algo rápido e leve.",
+      hint: "Perfeita pra algo rápido.",
       fields: [
         { key:"title", label:"Título", placeholder:"Oi, vim deixar isso aqui..." },
         { key:"to", label:"Para", placeholder:"Fulano/Fulana" },
@@ -410,19 +462,36 @@
   // =============================
   // Publish (gera link via /api/publish)
   // =============================
+  function openShareModal(url){
+    $("#shareLink").textContent = url;
+    $("#btnOpen").href = url;
+    $("#btnWhats").href = "https://wa.me/?text=" + encodeURIComponent(url);
+    $("#modalBack").style.display = "grid";
+
+    $("#btnCopy").onclick = async () => {
+      try{ await navigator.clipboard.writeText(url); }catch(e){}
+      alert("Copiado ✅");
+    };
+
+    $("#btnShare").onclick = async () => {
+      if(navigator.share){
+        try{
+          await navigator.share({ title: "Cartinha", text: "Olha minha cartinha 💌", url });
+        }catch(e){}
+      } else {
+        alert("Seu navegador não tem compartilhamento nativo. Use Copiar.");
+      }
+    };
+  }
+
   async function publishLink(){
     if(!themeId) return;
 
     const t = THEMES[themeId];
     const data = state[themeId] || {};
-    const html = t.generate(data, assets[themeId], "export"); // export -> usa ./imagens/...
 
-    // Se tiver foto, publicar só o HTML não leva a imagem (a imagem fica no ZIP).
-    // Por enquanto: se tiver foto, avisa pra usar ZIP.
-    if(themeId === "amor" && assets.amor.photo){
-      alert("Pra publicar com FOTO, a gente precisa enviar a imagem também.\nPor enquanto, use Exportar ZIP (offline).");
-      return;
-    }
+    // ✅ modo publish: se tiver foto, embed (base64) pra funcionar por link sem upload extra
+    const html = t.generate(data, assets[themeId], "publish");
 
     const btn = $("#btnPublish");
     const old = btn.textContent;
@@ -441,11 +510,8 @@
         throw new Error(j.error || ("Falha ao publicar ("+r.status+")"));
       }
 
-      const url = j.url;
-      if(url){
-        // copia pro clipboard quando possível
-        try{ await navigator.clipboard.writeText(url); }catch(e){}
-        alert("Link gerado ✅\n\n" + url + "\n\n(Copiado se o navegador permitir)");
+      if(j.url){
+        openShareModal(j.url);
       } else {
         alert("Publicado, mas não veio URL na resposta.");
       }
@@ -459,6 +525,8 @@
 
   $("#btnExport").addEventListener("click", exportZip);
   $("#btnPublish").addEventListener("click", publishLink);
+  $("#btnCloseModal").addEventListener("click", ()=> $("#modalBack").style.display="none");
+  $("#modalBack").addEventListener("click", (e)=>{ if(e.target.id==="modalBack") $("#modalBack").style.display="none"; });
 
   // =============================
   // Templates
@@ -521,7 +589,11 @@ ${body}
 
     const photo = a.photo;
     const photoSrc = photo
-      ? (mode === "preview" ? (photo._dataUrl || "") : `./imagens/${safeName(photo.name)}`)
+      ? (
+          mode === "export"
+            ? `./imagens/${safeName(photo.name)}`
+            : (photo._dataUrl || "") // preview/publish embed
+        )
       : "";
 
     return baseDoc(title, `
@@ -551,7 +623,7 @@ ${body}
     `);
   }
 
-  function genCartinhaSimples(data, a, mode){
+  function genCartinhaSimples(data){
     const title = data.title || "Oi, vim deixar isso aqui…";
     const to = data.to || "";
     const msg = data.message || "";
