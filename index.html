@@ -31,6 +31,7 @@
     .brand{display:flex; flex-direction:column; gap:4px;}
     .brand h1{margin:0; font-size:16px;}
     .brand p{margin:0; font-size:12px; color:var(--muted)}
+
     .wrap{
       padding: 0 18px 18px;
       display:grid;
@@ -55,6 +56,22 @@
     .card-b{padding:12px}
     .grid{display:grid; gap:10px;}
 
+    .bar{display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; align-items:center;}
+    .btn{
+      border-radius: 14px;
+      border:1px solid rgba(255,255,255,.16);
+      background: rgba(255,255,255,.10);
+      color: var(--text);
+      padding:10px 12px;
+      cursor:pointer;
+      font-size:13px;
+      display:inline-flex; gap:8px; align-items:center;
+    }
+    .btn:hover{ background: rgba(255,255,255,.14); }
+    .btn:disabled{ opacity:.5; cursor:not-allowed; }
+
+    .hint{font-size:12px; color:var(--muted); line-height:1.45}
+
     label{font-size:12px; color:var(--muted)}
     input, textarea{
       width:100%;
@@ -69,20 +86,6 @@
     }
     textarea{min-height: 120px; resize:vertical;}
 
-    .btn{
-      border-radius: 14px;
-      border:1px solid rgba(255,255,255,.16);
-      background: rgba(255,255,255,.10);
-      color: var(--text);
-      padding:10px 12px;
-      cursor:pointer;
-      font-size:13px;
-      display:inline-flex; gap:8px; align-items:center;
-    }
-    .btn:hover{ background: rgba(255,255,255,.14); }
-    .btn:disabled{ opacity:.5; cursor:not-allowed; }
-    .hint{font-size:12px; color:var(--muted); line-height:1.45}
-
     .preview{
       height: calc(100vh - 108px);
       width:100%;
@@ -90,7 +93,30 @@
       border-radius: 16px;
       background: rgba(0,0,0,.15);
     }
-    .bar{display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; align-items:center;}
+
+    /* Temas */
+    .themes{
+      display:grid;
+      gap:10px;
+    }
+    .theme{
+      padding:12px;
+      border-radius: 16px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.18);
+      cursor:pointer;
+      display:flex; gap:10px;
+      align-items:flex-start;
+      user-select:none;
+    }
+    .theme:hover{ background: rgba(0,0,0,.26); }
+    .theme.active{
+      border-color: rgba(255,255,255,.25);
+      background: rgba(255,255,255,.08);
+    }
+    .emoji{font-size:22px; width:32px; text-align:center}
+    .theme .name{font-size:13px; margin:0}
+    .theme .desc{font-size:12px; color:var(--muted); margin:4px 0 0}
 
     .toast{
       position: fixed;
@@ -124,8 +150,8 @@
 <body>
   <header>
     <div class="brand">
-      <h1>💌 Construtor de Cartinha</h1>
-      <p>Preencha, veja o preview, exporte um ZIP ou publique para gerar um link.</p>
+      <h1>💌 Construtor de Cartinhas</h1>
+      <p>Escolha um tema, preencha, veja o preview e publique para gerar um link.</p>
     </div>
     <div class="bar">
       <button class="btn" id="btnPublish">🌐 Publicar (gerar link)</button>
@@ -136,7 +162,15 @@
   <div class="wrap">
     <div class="card">
       <div class="card-h">
-        <div class="t">📝 Dados da cartinha</div>
+        <div class="t">🎭 Temas</div>
+      </div>
+      <div class="card-b">
+        <div class="themes" id="themes"></div>
+      </div>
+
+      <div class="card-h">
+        <div class="t">📝 Dados do tema</div>
+        <div class="hint" id="themeHint"></div>
       </div>
       <div class="card-b">
         <div class="grid" id="form"></div>
@@ -152,7 +186,6 @@
         <div class="hint">Atualiza automaticamente</div>
       </div>
       <div class="card-b">
-        <!-- sem allow-same-origin e sem allow-scripts desnecessário -->
         <iframe class="preview" id="preview" sandbox=""></iframe>
       </div>
     </div>
@@ -181,6 +214,14 @@
   function safeName(name){
     return String(name || "imagem.jpg").replace(/[^\w.\-]+/g, "_");
   }
+  function readFileAsDataURL(file){
+    return new Promise((resolve, reject)=>{
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+  }
 
   function showToast(title, msg, actions = []){
     const t = $("#toast");
@@ -208,18 +249,84 @@
     showToast._to = setTimeout(()=> t.classList.remove("open"), 12000);
   }
 
-  function makeField({key,label,type="text",placeholder="",help=""}, value, onChange){
-    const wrap = document.createElement("div");
-    const id = "f_" + key;
-    wrap.innerHTML = `<label for="${id}">${escHtml(label)}</label>`;
-    let el;
+  // =============================
+  // Temas (por enquanto só 1)
+  // Depois você só adiciona mais itens aqui.
+  // =============================
+  const THEMES = {
+    amor: {
+      emoji: "💌",
+      name: "Cartinha de Amor",
+      desc: "Uma carta simples e linda (com foto opcional).",
+      hint: "Esse é o tema padrão. Depois você adiciona outros (convite, processo, etc).",
+      fields: [
+        { key:"title", label:"Título", type:"text", placeholder:"ex: Uma cartinha pra você 💗" },
+        { key:"to", label:"Para", type:"text", placeholder:"ex: Meu amor" },
+        { key:"message", label:"Mensagem", type:"textarea", placeholder:"Digite sua cartinha aqui..." },
+        { key:"from", label:"Assinatura", type:"text", placeholder:"ex: Seu nome" },
+        { key:"photo", label:"Foto (opcional)", type:"file", help:"A foto aparece no topo da cartinha." }
+      ],
+      generate: (data, assets, mode) => generateLoveLetter(data, assets, mode)
+    }
+  };
 
-    if(type === "textarea"){
+  // =============================
+  // Estado (por tema)
+  // =============================
+  let themeId = "amor";
+
+  const state = {
+    amor: {
+      title: "Uma cartinha pra você 💗",
+      to: "Meu amor",
+      message: "Escreva aqui sua mensagem...\n\nCom carinho,\nEu ❤️",
+      from: "Seu nome"
+    }
+  };
+
+  const assets = {
+    amor: { photo: null, photoDataUrl: "" }
+  };
+
+  // =============================
+  // UI
+  // =============================
+  function renderThemes(){
+    const root = $("#themes");
+    root.innerHTML = "";
+    Object.entries(THEMES).forEach(([id, t])=>{
+      const el = document.createElement("div");
+      el.className = "theme" + (id === themeId ? " active" : "");
+      el.innerHTML = `
+        <div class="emoji">${t.emoji}</div>
+        <div>
+          <p class="name">${escHtml(t.name)}</p>
+          <p class="desc">${escHtml(t.desc)}</p>
+        </div>
+      `;
+      el.addEventListener("click", ()=>{
+        themeId = id;
+        renderThemes();
+        renderForm();
+        updatePreview();
+      });
+      root.appendChild(el);
+    });
+  }
+
+  function makeField(field, value, onChange){
+    const wrap = document.createElement("div");
+    const id = "f_" + field.key;
+
+    wrap.innerHTML = `<label for="${id}">${escHtml(field.label)}</label>`;
+
+    let el;
+    if(field.type === "textarea"){
       el = document.createElement("textarea");
       el.id = id;
       el.value = value ?? "";
-      if(placeholder) el.placeholder = placeholder;
-    } else if(type === "file"){
+      if(field.placeholder) el.placeholder = field.placeholder;
+    } else if(field.type === "file"){
       el = document.createElement("input");
       el.id = id;
       el.type = "file";
@@ -227,72 +334,46 @@
     } else {
       el = document.createElement("input");
       el.id = id;
-      el.type = type;
+      el.type = field.type || "text";
       el.value = value ?? "";
-      if(placeholder) el.placeholder = placeholder;
+      if(field.placeholder) el.placeholder = field.placeholder;
     }
 
-    el.addEventListener("input", ()=> onChange(key, el));
-    el.addEventListener("change", ()=> onChange(key, el));
+    el.addEventListener("input", ()=> onChange(field, el));
+    el.addEventListener("change", ()=> onChange(field, el));
     wrap.appendChild(el);
 
-    if(help){
+    if(field.help){
       const h = document.createElement("div");
       h.className = "hint";
       h.style.marginTop = "6px";
-      h.textContent = help;
+      h.textContent = field.help;
       wrap.appendChild(h);
     }
     return wrap;
   }
 
-  function readFileAsDataURL(file){
-    return new Promise((resolve, reject)=>{
-      const r = new FileReader();
-      r.onload = () => resolve(String(r.result));
-      r.onerror = reject;
-      r.readAsDataURL(file);
-    });
-  }
-
-  // =============================
-  // Estado
-  // =============================
-  const state = {
-    title: "Uma cartinha pra você 💗",
-    to: "Meu amor",
-    message: "Escreva aqui sua mensagem...\n\nCom carinho,\nEu ❤️",
-    from: "Seu nome",
-  };
-
-  const assets = {
-    photo: null,
-    photoDataUrl: ""
-  };
-
-  const FIELDS = [
-    { key:"title", label:"Título", placeholder:"ex: Pra você..." },
-    { key:"to", label:"Para", placeholder:"ex: Meu amor" },
-    { key:"message", label:"Mensagem", type:"textarea", placeholder:"Digite sua cartinha aqui..." },
-    { key:"from", label:"Assinatura", placeholder:"ex: Nicollas" },
-    { key:"photo", label:"Foto (opcional)", type:"file", help:"A foto aparece no topo da cartinha." },
-  ];
-
   function renderForm(){
     const form = $("#form");
+    const t = THEMES[themeId];
+    $("#themeHint").textContent = t.hint || "";
     form.innerHTML = "";
-    FIELDS.forEach(f=>{
-      const value = (f.key in state) ? state[f.key] : "";
-      const el = makeField(f, value, async (key, inputEl)=>{
-        if(key === "photo"){
+
+    const data = state[themeId] || (state[themeId] = {});
+    const a = assets[themeId];
+
+    t.fields.forEach(field=>{
+      const val = data[field.key];
+      const el = makeField(field, val, async (field, inputEl)=>{
+        if(field.type === "file" && field.key === "photo"){
           const file = inputEl.files && inputEl.files[0] ? inputEl.files[0] : null;
-          assets.photo = file;
-          assets.photoDataUrl = "";
+          a.photo = file;
+          a.photoDataUrl = "";
           if(file){
-            assets.photoDataUrl = await readFileAsDataURL(file);
+            a.photoDataUrl = await readFileAsDataURL(file);
           }
         } else {
-          state[key] = inputEl.value;
+          data[field.key] = inputEl.value;
         }
         updatePreview();
       });
@@ -301,18 +382,97 @@
   }
 
   // =============================
-  // Gerador da cartinha (sem <script> dentro!)
+  // Preview / Export / Publish
   // =============================
-  function generateLetter(mode){
-    const title = state.title || "";
-    const to = state.to || "";
-    const message = state.message || "";
-    const from = state.from || "";
+  function updatePreview(){
+    const t = THEMES[themeId];
+    const html = t.generate(state[themeId], assets[themeId], "preview");
+    $("#preview").srcdoc = html;
+  }
 
-    const photoSrc = assets.photo
-      ? (mode === "preview"
-          ? (assets.photoDataUrl || "")
-          : `./imagens/${safeName(assets.photo.name)}`)
+  async function exportZip(){
+    const t = THEMES[themeId];
+    const zip = new JSZip();
+
+    const html = t.generate(state[themeId], assets[themeId], "export");
+    zip.file("index.html", html);
+
+    const imgFolder = zip.folder("imagens");
+    const a = assets[themeId];
+    if(a.photo){
+      imgFolder.file(safeName(a.photo.name), a.photo);
+    }
+
+    const blob = await zip.generateAsync({type:"blob"});
+    saveAs(blob, `cartinha_${themeId}.zip`);
+  }
+
+  async function publish(){
+    if(location.protocol === "file:"){
+      showToast("Publicar não disponível",
+        "Abra este construtor pelo link do Vercel (não no file://) para publicar.");
+      return;
+    }
+
+    const btn = $("#btnPublish");
+    btn.disabled = true;
+    btn.textContent = "⏳ Publicando...";
+
+    try{
+      const t = THEMES[themeId];
+      const html = t.generate(state[themeId], assets[themeId], "export");
+
+      const r = await fetch("/api/publish", {
+        method: "POST",
+        headers: { "content-type":"application/json" },
+        body: JSON.stringify({ html, theme: themeId })
+      });
+
+      const j = await r.json().catch(()=> ({}));
+      if(!r.ok) throw new Error(j?.error || ("Falha ao publicar: HTTP " + r.status));
+
+      const url = j.url;
+
+      showToast(
+        "Publicado ✅",
+        `Link: <a href="${escAttr(url)}" target="_blank" rel="noopener">${escHtml(url)}</a>`,
+        [
+          {
+            text: "Copiar link",
+            onClick: async ()=>{
+              try{
+                await navigator.clipboard.writeText(url);
+                showToast("Copiado ✅", "Link copiado para a área de transferência.");
+              } catch {
+                showToast("Ops…", "Não consegui copiar automaticamente. Copie manualmente o link.");
+              }
+            }
+          },
+          { tag:"a", href: url, text:"Abrir link" }
+        ]
+      );
+    } catch(e){
+      showToast("Erro ao publicar", escHtml(String(e?.message || e)));
+    } finally{
+      btn.disabled = false;
+      btn.textContent = "🌐 Publicar (gerar link)";
+    }
+  }
+
+  $("#btnExport").addEventListener("click", exportZip);
+  $("#btnPublish").addEventListener("click", publish);
+
+  // =============================
+  // Tema: Cartinha de Amor (gerador)
+  // =============================
+  function generateLoveLetter(data, a, mode){
+    const title = data.title || "";
+    const to = data.to || "";
+    const message = data.message || "";
+    const from = data.from || "";
+
+    const photoSrc = a.photo
+      ? (mode === "preview" ? (a.photoDataUrl || "") : `./imagens/${safeName(a.photo.name)}`)
       : "";
 
     const photoHtml = photoSrc
@@ -393,78 +553,8 @@
 </html>`;
   }
 
-  function updatePreview(){
-    $("#preview").srcdoc = generateLetter("preview");
-  }
-
-  async function exportZip(){
-    const zip = new JSZip();
-    zip.file("index.html", generateLetter("export"));
-
-    const imgFolder = zip.folder("imagens");
-    if(assets.photo){
-      imgFolder.file(safeName(assets.photo.name), assets.photo);
-    }
-
-    const blob = await zip.generateAsync({type:"blob"});
-    saveAs(blob, "cartinha.zip");
-  }
-
-  async function publish(){
-    if(location.protocol === "file:"){
-      showToast("Publicar não disponível",
-        "Abra este construtor pelo link do Vercel (não no file://) para publicar.");
-      return;
-    }
-
-    const btn = $("#btnPublish");
-    btn.disabled = true;
-    btn.textContent = "⏳ Publicando...";
-
-    try{
-      const html = generateLetter("export");
-
-      const r = await fetch("/api/publish", {
-        method: "POST",
-        headers: { "content-type":"application/json" },
-        body: JSON.stringify({ html })
-      });
-
-      const j = await r.json().catch(()=> ({}));
-      if(!r.ok) throw new Error(j?.error || ("Falha ao publicar: HTTP " + r.status));
-
-      const url = j.url;
-
-      showToast(
-        "Publicado ✅",
-        `Link: <a href="${escAttr(url)}" target="_blank" rel="noopener">${escHtml(url)}</a>`,
-        [
-          {
-            text: "Copiar link",
-            onClick: async ()=>{
-              try{
-                await navigator.clipboard.writeText(url);
-                showToast("Copiado ✅", "Link copiado para a área de transferência.");
-              } catch {
-                showToast("Ops…", "Não consegui copiar automaticamente. Copie manualmente o link.");
-              }
-            }
-          },
-          { tag:"a", href: url, text:"Abrir link" }
-        ]
-      );
-    } catch(e){
-      showToast("Erro ao publicar", escHtml(String(e?.message || e)));
-    } finally{
-      btn.disabled = false;
-      btn.textContent = "🌐 Publicar (gerar link)";
-    }
-  }
-
-  $("#btnExport").addEventListener("click", exportZip);
-  $("#btnPublish").addEventListener("click", publish);
-
   // init
+  renderThemes();
   renderForm();
   updatePreview();
 </script>
