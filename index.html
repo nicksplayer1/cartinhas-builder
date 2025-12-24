@@ -1,4 +1,4 @@
- <!doctype html>
+<!doctype html>
 <html lang="pt-br">
 <head>
   <meta charset="utf-8" />
@@ -123,7 +123,6 @@
       background: rgba(0,0,0,.12);
     }
 
-    /* Modal */
     .modalBack{
       position:fixed; inset:0;
       background: rgba(0,0,0,.55);
@@ -167,7 +166,6 @@
     }
   </style>
 
-  <!-- libs para ZIP -->
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
 </head>
@@ -181,12 +179,10 @@
     <div class="bar">
       <button class="btn" id="btnPay" disabled>💳 Pagar R$ 4,90 e gerar link</button>
       <button class="btn" id="btnExport" disabled>⬇️ Exportar ZIP</button>
-      <button class="btn" id="btnDiag">🧪 Testar /api/publish (diagnóstico)</button>
     </div>
   </header>
 
   <div class="wrap">
-    <!-- LEFT -->
     <div class="card">
       <div class="card-h">
         <div class="t">🎭 Temas</div>
@@ -197,7 +193,6 @@
 
         <div class="sep"></div>
 
-        <!-- Painel que só aparece quando escolher tema -->
         <div id="editor" style="display:none;">
           <div class="hint" id="themeHint" style="margin-bottom:10px;"></div>
           <div class="grid" id="form"></div>
@@ -212,7 +207,6 @@
       </div>
     </div>
 
-    <!-- RIGHT -->
     <div class="card">
       <div class="card-h">
         <div class="t">👀 Preview</div>
@@ -224,7 +218,6 @@
     </div>
   </div>
 
-  <!-- Modal -->
   <div class="modalBack" id="modalBack">
     <div class="modal">
       <div class="modalH">
@@ -240,14 +233,7 @@
   </div>
 
 <script>
-  // =============================
-  // Config
-  // =============================
   const PRICE_LABEL = "R$ 4,90";
-
-  // =============================
-  // Helpers
-  // =============================
   const $ = (s) => document.querySelector(s);
 
   function escHtml(s){
@@ -349,24 +335,9 @@
   function closeModal(){
     $("#modalBack").style.display = "none";
   }
-
   $("#btnCloseModal").addEventListener("click", closeModal);
   $("#modalBack").addEventListener("click", (e)=>{ if(e.target.id==="modalBack") closeModal(); });
 
-  // Lê texto do response e tenta JSON (pra não "sumir" o erro)
-  async function readResponseSmart(res){
-    const text = await res.text();
-    let json = null;
-    try { json = JSON.parse(text); } catch {}
-    return { text, json };
-  }
-  function pretty(obj){
-    try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
-  }
-
-  // =============================
-  // Temas
-  // =============================
   const THEMES = {
     amor: {
       emoji: "💌",
@@ -398,9 +369,6 @@
     }
   };
 
-  // =============================
-  // Estado
-  // =============================
   let themeId = null;
 
   const state = {
@@ -419,13 +387,10 @@
   };
 
   const assets = {
-    amor: { photo: null }, // File + _dataUrl
+    amor: { photo: null },
     simples: {}
   };
 
-  // =============================
-  // UI
-  // =============================
   function renderThemes(){
     const root = $("#themes");
     root.innerHTML = "";
@@ -493,9 +458,6 @@
     $("#preview").srcdoc = html;
   }
 
-  // =============================
-  // Export ZIP (offline)
-  // =============================
   async function exportZip(){
     if(!themeId) return;
 
@@ -507,7 +469,6 @@
     zip.file("index.html", html);
 
     const imgFolder = zip.folder("imagens");
-
     if(themeId === "amor"){
       const photo = assets.amor.photo;
       if(photo){
@@ -520,19 +481,21 @@
   }
   $("#btnExport").addEventListener("click", exportZip);
 
-  // =============================
-  // Pagamento + Link (Pix)
-  // =============================
+  async function fetchJsonOrText(url, options){
+    const res = await fetch(url, options);
+    const text = await res.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch {}
+    return { res, text, data };
+  }
+
   async function checkPaidLoop(id){
-    const maxTries = 40; // ~2min
+    const maxTries = 40;
     for(let i=0;i<maxTries;i++){
       await new Promise(r=>setTimeout(r, 3000));
       try{
-        const res = await fetch("/api/status?id=" + encodeURIComponent(id), { cache:"no-store" });
-        const { json } = await readResponseSmart(res);
-        if(res.ok && json && json.paid && json.url){
-          return json.url;
-        }
+        const { res, data } = await fetchJsonOrText("/api/status?id=" + encodeURIComponent(id));
+        if(res.ok && data && data.paid && data.url) return data.url;
       }catch(e){}
     }
     return null;
@@ -551,27 +514,25 @@
     btn.textContent = "⏳ Criando pagamento...";
 
     try{
-      const r = await fetch("/api/publish", {
+      const { res, text, data: j } = await fetchJsonOrText("/api/publish", {
         method:"POST",
         headers:{ "content-type":"application/json" },
-        body: JSON.stringify({ theme: themeId, html }),
-        cache: "no-store"
+        body: JSON.stringify({ theme: themeId, html })
       });
 
-      const { text, json } = await readResponseSmart(r);
-
-      if(!r.ok){
-        // mostra tudo no modal
-        const payload = json ? pretty(json) : text;
-        throw new Error(`Falha (${r.status})\n\n${payload}`);
+      if(!res.ok){
+        // Aqui agora você vai ver o ERRO REAL:
+        const msg =
+          (j && (j.error || j.message)) ||
+          `Falha (${res.status})\n\nResposta:\n${text.slice(0, 2000)}`;
+        throw new Error(msg);
       }
 
-      const j = json || {};
       const checkoutUrl = j.checkout_url;
       const id = j.id;
 
       if(!checkoutUrl || !id){
-        throw new Error("Resposta OK, mas sem checkout_url/id.\n\n" + pretty(j));
+        throw new Error("Resposta OK mas sem checkout_url/id. Conteúdo:\n" + JSON.stringify(j, null, 2));
       }
 
       openModal({
@@ -586,13 +547,7 @@
             }
           },
           { label:"✅ Já paguei — verificar", onClick: async ()=>{
-              openModal({
-                title: "⏳ Verificando pagamento…",
-                hint: "Se o Pix acabou de ser pago, pode levar alguns segundos para confirmar.",
-                linkText: "",
-                buttons: []
-              });
-
+              openModal({ title:"⏳ Verificando…", hint:"Pode demorar alguns segundos.", linkText:"", buttons: [] });
               const finalUrl = await checkPaidLoop(id);
               if(finalUrl){
                 openModal({
@@ -601,37 +556,29 @@
                   linkText: finalUrl,
                   buttons: [
                     { label:"📋 Copiar", onClick: async ()=>{ try{ await navigator.clipboard.writeText(finalUrl);}catch(e){} alert("Copiado ✅"); } },
-                    { type:"a", label:"🔗 Abrir", href: finalUrl },
+                    { type:"a", label:"🔗 Abrir", href:finalUrl },
                     { type:"a", label:"💬 WhatsApp", href:"https://wa.me/?text="+encodeURIComponent(finalUrl) }
                   ]
                 });
               } else {
                 openModal({
                   title: "⚠️ Ainda não confirmou",
-                  hint: "Se você pagou agora, espere um pouco e tente verificar de novo.",
+                  hint: "Se você pagou agora, espere e tente de novo. Se nunca confirma, o webhook não está chegando.",
                   linkText: "",
                   buttons: [
                     { type:"a", label:"🔗 Abrir pagamento", href: checkoutUrl },
                     { label:"✅ Verificar de novo", onClick: async ()=>{
-                        openModal({ title:"⏳ Verificando…", hint:"Aguarde alguns segundos.", linkText:"", buttons: [] });
+                        openModal({ title:"⏳ Verificando…", hint:"Aguarde.", linkText:"", buttons: [] });
                         const again = await checkPaidLoop(id);
                         if(again){
-                          openModal({
-                            title:"✅ Link gerado",
-                            hint:"Tudo certo!",
-                            linkText: again,
-                            buttons:[
-                              { label:"📋 Copiar", onClick: async ()=>{ try{ await navigator.clipboard.writeText(again);}catch(e){} alert("Copiado ✅"); } },
-                              { type:"a", label:"🔗 Abrir", href:again }
-                            ]
-                          });
+                          openModal({ title:"✅ Link gerado", hint:"Tudo certo!", linkText: again, buttons:[
+                            { label:"📋 Copiar", onClick: async ()=>{ try{ await navigator.clipboard.writeText(again);}catch(e){} alert("Copiado ✅"); } },
+                            { type:"a", label:"🔗 Abrir", href:again }
+                          ]});
                         } else {
-                          openModal({
-                            title:"⚠️ Sem confirmação ainda",
-                            hint:"Se continuar, provavelmente o webhook não está chegando. Confira URL do webhook e logs.",
-                            linkText:"",
-                            buttons:[ { type:"a", label:"🔗 Abrir pagamento", href: checkoutUrl } ]
-                          });
+                          openModal({ title:"⚠️ Sem confirmação", hint:"Provável problema de webhook ou status.", linkText:"", buttons:[
+                            { type:"a", label:"🔗 Abrir pagamento", href: checkoutUrl }
+                          ]});
                         }
                       }
                     }
@@ -644,68 +591,16 @@
       });
 
     }catch(e){
-      openModal({
-        title: "❌ Erro",
-        hint: "O servidor respondeu com erro. Copie o detalhe abaixo e me mande.",
-        linkText: String(e?.message || e),
-        buttons: [
-          { label:"📋 Copiar detalhe", onClick: async ()=>{
-              try{ await navigator.clipboard.writeText(String(e?.message || e)); }catch(err){}
-              alert("Copiado ✅");
-            }
-          }
-        ]
-      });
+      alert("Erro:\n\n" + (e.message || e));
     }finally{
       btn.disabled = false;
-      btn.textContent = old;
+      btn.textContent = "💳 Pagar " + PRICE_LABEL + " e gerar link";
     }
   }
 
   $("#btnPay").addEventListener("click", payAndGenerateLink);
   $("#btnPay").textContent = "💳 Pagar " + PRICE_LABEL + " e gerar link";
 
-  // =============================
-  // Diagnóstico rápido
-  // =============================
-  async function diagPublish(){
-    // tenta chamar /api/publish com um HTML mínimo
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Teste</title></head><body>ok</body></html>`;
-    openModal({ title:"🧪 Diagnóstico", hint:"Chamando /api/publish com HTML mínimo…", linkText:"", buttons:[] });
-
-    try{
-      const r = await fetch("/api/publish", {
-        method:"POST",
-        headers:{ "content-type":"application/json" },
-        body: JSON.stringify({ theme:"amor", html }),
-        cache:"no-store"
-      });
-
-      const { text, json } = await readResponseSmart(r);
-      const payload = json ? pretty(json) : text;
-
-      openModal({
-        title: r.ok ? "✅ /api/publish OK" : `❌ /api/publish Falhou (${r.status})`,
-        hint: "Aqui está a resposta completa do servidor:",
-        linkText: payload || "(vazio)",
-        buttons: [
-          { label:"📋 Copiar", onClick: async ()=>{ try{ await navigator.clipboard.writeText(payload || ""); }catch(e){} alert("Copiado ✅"); } }
-        ]
-      });
-    }catch(e){
-      openModal({
-        title:"❌ Diagnóstico falhou",
-        hint:"Erro no fetch:",
-        linkText: String(e?.message || e),
-        buttons:[]
-      });
-    }
-  }
-  $("#btnDiag").addEventListener("click", diagPublish);
-
-  // =============================
-  // Templates
-  // =============================
   function baseDoc(title, body){
     return `<!doctype html>
 <html lang="pt-br">
@@ -763,11 +658,7 @@ ${body}
 
     const photo = a.photo;
     const photoSrc = photo
-      ? (
-          mode === "export"
-            ? `./imagens/${safeName(photo.name)}`
-            : (photo._dataUrl || "")
-        )
+      ? (mode === "export" ? `./imagens/${safeName(photo.name)}` : (photo._dataUrl || ""))
       : "";
 
     return baseDoc(title, `
@@ -813,12 +704,7 @@ ${body}
           <div style="padding:16px; border-radius:18px; border:1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.18);">
             <div style="white-space:pre-wrap; line-height:1.75;">${escHtml(msg)}</div>
           </div>
-
-          ${from ? `
-            <div style="margin-top:14px; text-align:right; color:rgba(255,255,255,.82);">
-              ${escHtml(from)}
-            </div>
-          ` : ""}
+          ${from ? `<div style="margin-top:14px; text-align:right; color:rgba(255,255,255,.82);">${escHtml(from)}</div>` : ""}
         </div>
       </div>
     `);
@@ -828,19 +714,13 @@ ${body}
     return baseDoc("Preview", `
       <div class="card">
         <div class="h"><div class="h1">👈 Escolha um tema</div></div>
-        <div class="b">
-          <div class="muted">Selecione um tema na esquerda pra começar a escrever.</div>
-        </div>
+        <div class="b"><div class="muted">Selecione um tema na esquerda pra começar a escrever.</div></div>
       </div>
     `);
   }
 
-  // =============================
-  // init
-  // =============================
   renderThemes();
   updatePreview();
 </script>
 </body>
 </html>
-
