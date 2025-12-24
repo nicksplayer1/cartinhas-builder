@@ -1,26 +1,38 @@
-// api/status.js
-module.exports = async (req, res) => {
+import { createClient } from "@supabase/supabase-js";
+
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+
+function json(res, status, data) {
+  res.statusCode = status;
+  res.setHeader("content-type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(data));
+}
+
+export default async function handler(req, res) {
   try {
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+    const id = req.query?.id;
+    if (!id) return json(res, 400, { error: "Missing id" });
 
-    const id = String(req.query?.id || "");
-    if (!id) return res.status(400).json({ error: "id obrigatório" });
-    if (!SUPABASE_URL || !KEY || !PUBLIC_BASE_URL) return res.status(500).json({ error: "env faltando" });
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    const url = `${SUPABASE_URL}/rest/v1/cartinhas?select=paid&id=eq.${encodeURIComponent(id)}&limit=1`;
-    const r = await fetch(url, { headers: { authorization: `Bearer ${KEY}`, apikey: KEY } });
-    const j = await r.json().catch(() => []);
-    const paid = !!(j?.[0]?.paid);
+    const { data, error } = await supabase
+      .from("cartinhas")
+      .select("id, paid, mp_init_point")
+      .eq("id", id)
+      .maybeSingle();
 
-    res.status(200).json({
-      id,
-      paid,
-      view_url: paid ? `${PUBLIC_BASE_URL}/api/view?id=${id}` : null,
-    });
+    if (error) return json(res, 500, { error: error.message });
+    if (!data) return json(res, 404, { error: "Not found" });
+
+    if (!data.paid) {
+      return json(res, 200, { paid: false, checkout_url: data.mp_init_point || null });
+    }
+
+    const url = `${PUBLIC_BASE_URL}/api/view?id=${id}`;
+    return json(res, 200, { paid: true, url });
   } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) });
+    return json(res, 500, { error: e?.message || String(e) });
   }
-};
-
+}
