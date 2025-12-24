@@ -1,4 +1,4 @@
- <!doctype html>
+<!doctype html>
 <html lang="pt-br">
 <head>
   <meta charset="utf-8" />
@@ -100,6 +100,7 @@
       cursor:pointer;
       font-size:13px;
       display:inline-flex; gap:8px; align-items:center;
+      text-decoration:none;
     }
     .btn:hover{ background: rgba(255,255,255,.14); }
     .btn:disabled{ opacity:.5; cursor:not-allowed; }
@@ -122,7 +123,7 @@
       background: rgba(0,0,0,.12);
     }
 
-    /* Modal de compartilhar */
+    /* Modal */
     .modalBack{
       position:fixed; inset:0;
       background: rgba(0,0,0,.55);
@@ -132,7 +133,7 @@
       z-index:9999;
     }
     .modal{
-      width:min(560px, 100%);
+      width:min(620px, 100%);
       border-radius: 18px;
       background: rgba(20,20,30,.82);
       border:1px solid rgba(255,255,255,.18);
@@ -140,7 +141,12 @@
       backdrop-filter: blur(14px);
       overflow:hidden;
     }
-    .modalH{padding:12px 14px; border-bottom:1px solid rgba(255,255,255,.10); display:flex; justify-content:space-between; align-items:center;}
+    .modalH{
+      padding:12px 14px;
+      border-bottom:1px solid rgba(255,255,255,.10);
+      display:flex; justify-content:space-between; align-items:center;
+      gap:10px;
+    }
     .modalB{padding:14px;}
     .rowBtns{display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;}
     .linkBox{
@@ -169,10 +175,10 @@
   <header>
     <div class="brand">
       <h1>💌 Construtor de Cartinhas</h1>
-      <p>Toque em um tema, preencha, veja o preview. Depois exporte ZIP (offline) ou publique (link).</p>
+      <p>Escolha um tema, escreva. Depois pague e gere um link (Pix) ou exporte ZIP.</p>
     </div>
     <div class="bar">
-      <button class="btn" id="btnPublish" disabled>🌐 Publicar (gerar link)</button>
+      <button class="btn" id="btnPay" disabled>💳 Pagar R$ 4,90 e gerar link</button>
       <button class="btn" id="btnExport" disabled>⬇️ Exportar ZIP</button>
     </div>
   </header>
@@ -216,28 +222,28 @@
     </div>
   </div>
 
-  <!-- Modal compartilhar -->
+  <!-- Modal (usado para pagamento e para link final) -->
   <div class="modalBack" id="modalBack">
     <div class="modal">
       <div class="modalH">
-        <div style="font-size:13px;">✅ Link gerado</div>
+        <div style="font-size:13px;" id="modalTitle">✅</div>
         <button class="btn" id="btnCloseModal">✖️ Fechar</button>
       </div>
       <div class="modalB">
-        <div class="hint">Copie e mande no WhatsApp/Instagram. No celular, você pode usar “Compartilhar”.</div>
-        <div class="linkBox" id="shareLink" style="margin-top:10px;"></div>
+        <div class="hint" id="modalHint"></div>
+        <div class="linkBox" id="modalLink" style="margin-top:10px; display:none;"></div>
 
-        <div class="rowBtns">
-          <button class="btn" id="btnCopy">📋 Copiar</button>
-          <a class="btn" id="btnOpen" target="_blank" rel="noopener">🔗 Abrir</a>
-          <a class="btn" id="btnWhats" target="_blank" rel="noopener">💬 WhatsApp</a>
-          <button class="btn" id="btnShare">📲 Compartilhar</button>
-        </div>
+        <div class="rowBtns" id="modalBtns"></div>
       </div>
     </div>
   </div>
 
 <script>
+  // =============================
+  // Config
+  // =============================
+  const PRICE_LABEL = "R$ 4,90";
+
   // =============================
   // Helpers
   // =============================
@@ -303,6 +309,49 @@
     return wrap;
   }
 
+  function openModal({ title, hint, linkText, buttons }){
+    $("#modalTitle").textContent = title || "✅";
+    $("#modalHint").textContent = hint || "";
+    const linkBox = $("#modalLink");
+    const btns = $("#modalBtns");
+
+    btns.innerHTML = "";
+
+    if(linkText){
+      linkBox.style.display = "block";
+      linkBox.textContent = linkText;
+    } else {
+      linkBox.style.display = "none";
+      linkBox.textContent = "";
+    }
+
+    (buttons || []).forEach(b=>{
+      if(b.type === "a"){
+        const a = document.createElement("a");
+        a.className = "btn";
+        a.textContent = b.label;
+        a.href = b.href || "#";
+        a.target = b.target || "_blank";
+        a.rel = "noopener";
+        btns.appendChild(a);
+      } else {
+        const bt = document.createElement("button");
+        bt.className = "btn";
+        bt.textContent = b.label;
+        bt.onclick = b.onClick;
+        btns.appendChild(bt);
+      }
+    });
+
+    $("#modalBack").style.display = "grid";
+  }
+  function closeModal(){
+    $("#modalBack").style.display = "none";
+  }
+
+  $("#btnCloseModal").addEventListener("click", closeModal);
+  $("#modalBack").addEventListener("click", (e)=>{ if(e.target.id==="modalBack") closeModal(); });
+
   // =============================
   // Temas
   // =============================
@@ -311,7 +360,7 @@
       emoji: "💌",
       name: "Cartinha de Amor",
       desc: "Carta glass + foto opcional.",
-      hint: "Ideal pra mandar por link (Whats/IG) ou exportar ZIP (offline).",
+      hint: "Ideal pra mandar por link (após pagamento Pix) ou exportar ZIP (offline).",
       fields: [
         { key:"title", label:"Título", placeholder:"Uma cartinha pra você ❤️" },
         { key:"to", label:"Para", placeholder:"Meu amor" },
@@ -333,7 +382,7 @@
         { key:"message", label:"Mensagem", type:"textarea", placeholder:"Escreva aqui..." },
         { key:"from", label:"Assinatura", placeholder:"Seu nome" }
       ],
-      generate: (data, asset, mode) => genCartinhaSimples(data, asset, mode)
+      generate: (data, asset, mode) => genCartinhaSimples(data)
     }
   };
 
@@ -350,14 +399,13 @@
       from: "Seu nome"
     },
     simples: {
-      title: "Oi , vim deixar isso aqui…",
+      title: "Oi, vim deixar isso aqui…",
       to: "Você",
       message: "Escreva aqui sua mensagem...",
       from: "— Seu nome"
     }
   };
 
-  // assets por tema
   const assets = {
     amor: { photo: null }, // File + _dataUrl
     simples: {}
@@ -385,7 +433,7 @@
         $("#editor").style.display = "block";
         $("#pickTheme").style.display = "none";
         $("#btnExport").disabled = false;
-        $("#btnPublish").disabled = false;
+        $("#btnPay").disabled = false;
         renderThemes();
         renderForm();
         updatePreview();
@@ -458,80 +506,167 @@
     const blob = await zip.generateAsync({type:"blob"});
     saveAs(blob, `cartinha_${themeId}.zip`);
   }
+  $("#btnExport").addEventListener("click", exportZip);
 
   // =============================
-  // Publish (gera link via /api/publish)
+  // Pagamento + Link (Pix)
   // =============================
-  function openShareModal(url){
-    $("#shareLink").textContent = url;
-    $("#btnOpen").href = url;
-    $("#btnWhats").href = "https://wa.me/?text=" + encodeURIComponent(url);
-    $("#modalBack").style.display = "grid";
-
-    $("#btnCopy").onclick = async () => {
-      try{ await navigator.clipboard.writeText(url); }catch(e){}
-      alert("Copiado ✅");
-    };
-
-    $("#btnShare").onclick = async () => {
-      if(navigator.share){
-        try{
-          await navigator.share({ title: "Cartinha", text: "Olha minha cartinha 💌", url });
-        }catch(e){}
-      } else {
-        alert("Seu navegador não tem compartilhamento nativo. Use Copiar.");
-      }
-    };
+  async function checkPaidLoop(id){
+    // tenta várias vezes (webhook pode demorar alguns segundos)
+    const maxTries = 40; // ~2 minutos se 3s
+    for(let i=0;i<maxTries;i++){
+      await new Promise(r=>setTimeout(r, 3000));
+      try{
+        const res = await fetch("/api/status?id=" + encodeURIComponent(id));
+        const j = await res.json().catch(()=> ({}));
+        if(res.ok && j.paid && j.url){
+          return j.url;
+        }
+      }catch(e){}
+    }
+    return null;
   }
 
-  async function publishLink(){
+  async function payAndGenerateLink(){
     if(!themeId) return;
 
     const t = THEMES[themeId];
     const data = state[themeId] || {};
 
-    // ✅ modo publish: se tiver foto, embed (base64) pra funcionar por link sem upload extra
+    // publish: com foto embed (base64) pra funcionar por link sem upload extra
     const html = t.generate(data, assets[themeId], "publish");
 
-    const btn = $("#btnPublish");
+    const btn = $("#btnPay");
     const old = btn.textContent;
     btn.disabled = true;
-    btn.textContent = "⏳ Publicando...";
+    btn.textContent = "⏳ Criando pagamento...";
 
     try{
       const r = await fetch("/api/publish", {
         method:"POST",
         headers:{ "content-type":"application/json" },
-        body: JSON.stringify({ html })
+        body: JSON.stringify({ theme: themeId, html })
       });
 
       const j = await r.json().catch(()=> ({}));
       if(!r.ok){
-        throw new Error(j.error || ("Falha ao publicar ("+r.status+")"));
+        throw new Error(j.error || ("Falha ("+r.status+")"));
       }
 
-      if(j.url){
-        openShareModal(j.url);
-      } else {
-        alert("Publicado, mas não veio URL na resposta.");
+      // Caso antigo (já devolve URL final)
+      if(j.url && !j.checkout_url){
+        openModal({
+          title: "✅ Link gerado",
+          hint: "Copie e mande no WhatsApp/Instagram.",
+          linkText: j.url,
+          buttons: [
+            { label:"📋 Copiar", onClick: async ()=>{ try{ await navigator.clipboard.writeText(j.url);}catch(e){} alert("Copiado ✅"); } },
+            { type:"a", label:"🔗 Abrir", href:j.url },
+            { type:"a", label:"💬 WhatsApp", href:"https://wa.me/?text="+encodeURIComponent(j.url) }
+          ]
+        });
+        return;
       }
+
+      // Fluxo com pagamento
+      const checkoutUrl = j.checkout_url;
+      const id = j.id;
+
+      if(!checkoutUrl || !id){
+        throw new Error("Resposta sem checkout_url/id. Verifique /api/publish.");
+      }
+
+      openModal({
+        title: "💳 Pague no Pix para liberar o link",
+        hint: "Abra o pagamento, conclua no Pix e depois clique em “Já paguei”.",
+        linkText: checkoutUrl,
+        buttons: [
+          { type:"a", label:"🔗 Abrir pagamento", href: checkoutUrl },
+          { label:"📋 Copiar link do pagamento", onClick: async ()=>{
+              try{ await navigator.clipboard.writeText(checkoutUrl);}catch(e){}
+              alert("Copiado ✅");
+            }
+          },
+          { label:"✅ Já paguei — verificar", onClick: async ()=>{
+              openModal({
+                title: "⏳ Verificando pagamento…",
+                hint: "Se o Pix acabou de ser pago, pode levar alguns segundos para confirmar.",
+                linkText: "",
+                buttons: []
+              });
+              const finalUrl = await checkPaidLoop(id);
+              if(finalUrl){
+                openModal({
+                  title: "✅ Link gerado",
+                  hint: "Copie e mande no WhatsApp/Instagram. No celular, você pode usar “Compartilhar”.",
+                  linkText: finalUrl,
+                  buttons: [
+                    { label:"📋 Copiar", onClick: async ()=>{ try{ await navigator.clipboard.writeText(finalUrl);}catch(e){} alert("Copiado ✅"); } },
+                    { type:"a", label:"🔗 Abrir", href:finalUrl },
+                    { type:"a", label:"💬 WhatsApp", href:"https://wa.me/?text="+encodeURIComponent(finalUrl) },
+                    { label:"📲 Compartilhar", onClick: async ()=>{
+                        if(navigator.share){
+                          try{ await navigator.share({ title:"Cartinha", text:"Olha minha cartinha 💌", url: finalUrl }); }catch(e){}
+                        } else {
+                          alert("Seu navegador não tem compartilhamento nativo. Use Copiar.");
+                        }
+                      }
+                    }
+                  ]
+                });
+              } else {
+                openModal({
+                  title: "⚠️ Ainda não confirmou",
+                  hint: "Se você pagou agora, espere um pouco e tente verificar de novo.",
+                  linkText: "",
+                  buttons: [
+                    { type:"a", label:"🔗 Abrir pagamento", href: checkoutUrl },
+                    { label:"✅ Verificar de novo", onClick: async ()=>{
+                        openModal({ title:"⏳ Verificando…", hint:"Aguarde alguns segundos.", linkText:"", buttons: [] });
+                        const again = await checkPaidLoop(id);
+                        if(again){
+                          openModal({
+                            title:"✅ Link gerado",
+                            hint:"Tudo certo!",
+                            linkText: again,
+                            buttons:[
+                              { label:"📋 Copiar", onClick: async ()=>{ try{ await navigator.clipboard.writeText(again);}catch(e){} alert("Copiado ✅"); } },
+                              { type:"a", label:"🔗 Abrir", href:again }
+                            ]
+                          });
+                        } else {
+                          openModal({
+                            title:"⚠️ Sem confirmação ainda",
+                            hint:"Se continuar, pode ser que o webhook não esteja chegando. Veja configuração do webhook (/api/mp-webhook).",
+                            linkText:"",
+                            buttons:[ { type:"a", label:"🔗 Abrir pagamento", href: checkoutUrl } ]
+                          });
+                        }
+                      }
+                    }
+                  ]
+                });
+              }
+            }
+          }
+        ]
+      });
+
     }catch(e){
-      alert("Erro ao publicar: " + (e.message || e));
+      alert("Erro: " + (e.message || e));
     }finally{
       btn.disabled = false;
-      btn.textContent = old;
+      btn.textContent = "💳 Pagar " + PRICE_LABEL + " e gerar link";
     }
   }
 
-  $("#btnExport").addEventListener("click", exportZip);
-  $("#btnPublish").addEventListener("click", publishLink);
-  $("#btnCloseModal").addEventListener("click", ()=> $("#modalBack").style.display="none");
-  $("#modalBack").addEventListener("click", (e)=>{ if(e.target.id==="modalBack") $("#modalBack").style.display="none"; });
+  $("#btnPay").addEventListener("click", payAndGenerateLink);
+  $("#btnPay").textContent = "💳 Pagar " + PRICE_LABEL + " e gerar link";
 
   // =============================
   // Templates
   // =============================
-  function baseDoc(title, body, extraCss=""){
+  function baseDoc(title, body){
     return `<!doctype html>
 <html lang="pt-br">
 <head>
@@ -572,7 +707,6 @@
   .b{padding:18px;}
   .muted{color:var(--muted); font-size:12px; line-height:1.45}
   .h1{margin:0; font-size:20px;}
-  ${extraCss}
 </style>
 </head>
 <body>
@@ -669,5 +803,3 @@ ${body}
 </script>
 </body>
 </html>
-
-
