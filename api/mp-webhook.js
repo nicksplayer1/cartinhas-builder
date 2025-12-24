@@ -1,72 +1,59 @@
-// api/mp-webhook.js
-module.exports = async (req, res) => {
+import { createClient } from "@supabase/supabase-js";
+
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
+
+function text(res, status, body) {
+  res.statusCode = status;
+  res.setHeader("content-type", "text/plain; charset=utf-8");
+  res.end(body);
+}
+
+export default async function handler(req, res) {
   try {
-    // MP manda GET ou POST dependendo do caso
-    const MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    // Mercado Pago pode mandar querystring ou body
+    const type = req.query?.type || req.body?.type;
+    const dataId = req.query?.["data.id"] || req.body?.data?.id;
 
-    if (!MP_ACCESS_TOKEN || !SUPABASE_URL || !KEY) {
-      return res.status(500).send("missing env");
+    // A gente só processa pagamento
+    if (type && type !== "payment") return text(res, 200, "ignored");
+
+    if (!dataId) {
+      // Mesmo sem dataId, não pode retornar 500 senão MP fica re-tentando sem parar
+      return text(res, 200, "ok_no_data");
     }
 
-    let paymentId = null;
-
-    // formato novo: { type: "payment", data: { id: "123" } }
-    if (req.method === "POST") {
-      let body = req.body;
-      if (typeof body === "string") body = JSON.parse(body);
-
-      if (body?.data?.id) paymentId = String(body.data.id);
-      if (!paymentId && body?.id) paymentId = String(body.id);
-    }
-
-    // formato antigo via query: ?topic=payment&id=123
-    if (!paymentId) {
-      const q = req.query || {};
-      if (q.id) paymentId = String(q.id);
-      if (q["data.id"]) paymentId = String(q["data.id"]);
-    }
-
-    if (!paymentId) {
-      // responde 200 pra não ficar tentando sem parar
-      return res.status(200).json({ ok: true, ignored: true });
-    }
-
-    // busca pagamento
-    const pr = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+    // 1) buscar pagamento no MP
+    const payRes = await fetch(`https://api.mercadopago.com/v1/payments/${dataId}`, {
       headers: { authorization: `Bearer ${MP_ACCESS_TOKEN}` },
     });
 
-    const pj = await pr.json().catch(() => ({}));
-    if (!pr.ok) {
-      return res.status(200).json({ ok: true, mp_fetch_failed: true }); // não derruba webhook
-    }
+    const pay = await payRes.json().catch(() => ({}));
+    if (!payRes.ok) return text(res, 200, "ok_mp_fetch_failed");
 
-    const status = pj.status; // approved, pending, rejected...
-    const orderId = pj.external_reference;
+    const status = pay.status; // approved / pending / rejected
+    const external_reference = pay.external_reference; // nosso id
+    const payment_id = String(pay.id || dataId);
 
-    if (!orderId) return res.status(200).json({ ok: true, no_external_reference: true });
+    if (!external_reference) return text(res, 200, "ok_no_reference");
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     if (status === "approved") {
-      // marca pago
-      const rest = `${SUPABASE_URL}/rest/v1/cartinhas?id=eq.${encodeURIComponent(orderId)}`;
-      await fetch(rest, {
-        method: "PATCH",
-        headers: {
-          authorization: `Bearer ${KEY}`,
-          apikey: KEY,
-          "content-type": "application/json",
-          prefer: "return=minimal",
-        },
-        body: JSON.stringify({ paid: true }),
-      });
+      await supabase
+        .from("cartinhas")
+        .update({
+          paid: true,
+          mp_payment_id: payment_id,
+          paid_at: new Date().toISOString(),
+        })
+        .eq("id", external_reference);
     }
 
-    return res.status(200).json({ ok: true });
+    return text(res, 200, "ok");
   } catch (e) {
-    // webhook nunca deve ficar retornando 500 toda hora
-    return res.status(200).json({ ok: true, error: String(e?.message || e) });
+    // Não pode quebrar o webhook com 500: MP vai re-tentar várias vezes.
+    return text(res, 200, "ok_catch");
   }
-};
-
+}
