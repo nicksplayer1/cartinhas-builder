@@ -1,4 +1,4 @@
-<!doctype html>
+ <!doctype html>
 <html lang="pt-br">
 <head>
   <meta charset="utf-8" />
@@ -133,7 +133,7 @@
       z-index:9999;
     }
     .modal{
-      width:min(620px, 100%);
+      width:min(720px, 100%);
       border-radius: 18px;
       background: rgba(20,20,30,.82);
       border:1px solid rgba(255,255,255,.18);
@@ -158,6 +158,7 @@
       color: rgba(255,255,255,.92);
       font-size:13px;
       word-break: break-all;
+      white-space: pre-wrap;
     }
 
     @media (max-width: 980px){
@@ -180,6 +181,7 @@
     <div class="bar">
       <button class="btn" id="btnPay" disabled>💳 Pagar R$ 4,90 e gerar link</button>
       <button class="btn" id="btnExport" disabled>⬇️ Exportar ZIP</button>
+      <button class="btn" id="btnDiag">🧪 Testar /api/publish (diagnóstico)</button>
     </div>
   </header>
 
@@ -222,7 +224,7 @@
     </div>
   </div>
 
-  <!-- Modal (usado para pagamento e para link final) -->
+  <!-- Modal -->
   <div class="modalBack" id="modalBack">
     <div class="modal">
       <div class="modalH">
@@ -232,7 +234,6 @@
       <div class="modalB">
         <div class="hint" id="modalHint"></div>
         <div class="linkBox" id="modalLink" style="margin-top:10px; display:none;"></div>
-
         <div class="rowBtns" id="modalBtns"></div>
       </div>
     </div>
@@ -352,6 +353,17 @@
   $("#btnCloseModal").addEventListener("click", closeModal);
   $("#modalBack").addEventListener("click", (e)=>{ if(e.target.id==="modalBack") closeModal(); });
 
+  // Lê texto do response e tenta JSON (pra não "sumir" o erro)
+  async function readResponseSmart(res){
+    const text = await res.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch {}
+    return { text, json };
+  }
+  function pretty(obj){
+    try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
+  }
+
   // =============================
   // Temas
   // =============================
@@ -382,7 +394,7 @@
         { key:"message", label:"Mensagem", type:"textarea", placeholder:"Escreva aqui..." },
         { key:"from", label:"Assinatura", placeholder:"Seu nome" }
       ],
-      generate: (data, asset, mode) => genCartinhaSimples(data)
+      generate: (data) => genCartinhaSimples(data)
     }
   };
 
@@ -512,15 +524,14 @@
   // Pagamento + Link (Pix)
   // =============================
   async function checkPaidLoop(id){
-    // tenta várias vezes (webhook pode demorar alguns segundos)
-    const maxTries = 40; // ~2 minutos se 3s
+    const maxTries = 40; // ~2min
     for(let i=0;i<maxTries;i++){
       await new Promise(r=>setTimeout(r, 3000));
       try{
-        const res = await fetch("/api/status?id=" + encodeURIComponent(id));
-        const j = await res.json().catch(()=> ({}));
-        if(res.ok && j.paid && j.url){
-          return j.url;
+        const res = await fetch("/api/status?id=" + encodeURIComponent(id), { cache:"no-store" });
+        const { json } = await readResponseSmart(res);
+        if(res.ok && json && json.paid && json.url){
+          return json.url;
         }
       }catch(e){}
     }
@@ -532,8 +543,6 @@
 
     const t = THEMES[themeId];
     const data = state[themeId] || {};
-
-    // publish: com foto embed (base64) pra funcionar por link sem upload extra
     const html = t.generate(data, assets[themeId], "publish");
 
     const btn = $("#btnPay");
@@ -545,35 +554,24 @@
       const r = await fetch("/api/publish", {
         method:"POST",
         headers:{ "content-type":"application/json" },
-        body: JSON.stringify({ theme: themeId, html })
+        body: JSON.stringify({ theme: themeId, html }),
+        cache: "no-store"
       });
 
-      const j = await r.json().catch(()=> ({}));
+      const { text, json } = await readResponseSmart(r);
+
       if(!r.ok){
-        throw new Error(j.error || ("Falha ("+r.status+")"));
+        // mostra tudo no modal
+        const payload = json ? pretty(json) : text;
+        throw new Error(`Falha (${r.status})\n\n${payload}`);
       }
 
-      // Caso antigo (já devolve URL final)
-      if(j.url && !j.checkout_url){
-        openModal({
-          title: "✅ Link gerado",
-          hint: "Copie e mande no WhatsApp/Instagram.",
-          linkText: j.url,
-          buttons: [
-            { label:"📋 Copiar", onClick: async ()=>{ try{ await navigator.clipboard.writeText(j.url);}catch(e){} alert("Copiado ✅"); } },
-            { type:"a", label:"🔗 Abrir", href:j.url },
-            { type:"a", label:"💬 WhatsApp", href:"https://wa.me/?text="+encodeURIComponent(j.url) }
-          ]
-        });
-        return;
-      }
-
-      // Fluxo com pagamento
+      const j = json || {};
       const checkoutUrl = j.checkout_url;
       const id = j.id;
 
       if(!checkoutUrl || !id){
-        throw new Error("Resposta sem checkout_url/id. Verifique /api/publish.");
+        throw new Error("Resposta OK, mas sem checkout_url/id.\n\n" + pretty(j));
       }
 
       openModal({
@@ -594,24 +592,17 @@
                 linkText: "",
                 buttons: []
               });
+
               const finalUrl = await checkPaidLoop(id);
               if(finalUrl){
                 openModal({
                   title: "✅ Link gerado",
-                  hint: "Copie e mande no WhatsApp/Instagram. No celular, você pode usar “Compartilhar”.",
+                  hint: "Copie e mande no WhatsApp/Instagram.",
                   linkText: finalUrl,
                   buttons: [
                     { label:"📋 Copiar", onClick: async ()=>{ try{ await navigator.clipboard.writeText(finalUrl);}catch(e){} alert("Copiado ✅"); } },
-                    { type:"a", label:"🔗 Abrir", href:finalUrl },
-                    { type:"a", label:"💬 WhatsApp", href:"https://wa.me/?text="+encodeURIComponent(finalUrl) },
-                    { label:"📲 Compartilhar", onClick: async ()=>{
-                        if(navigator.share){
-                          try{ await navigator.share({ title:"Cartinha", text:"Olha minha cartinha 💌", url: finalUrl }); }catch(e){}
-                        } else {
-                          alert("Seu navegador não tem compartilhamento nativo. Use Copiar.");
-                        }
-                      }
-                    }
+                    { type:"a", label:"🔗 Abrir", href: finalUrl },
+                    { type:"a", label:"💬 WhatsApp", href:"https://wa.me/?text="+encodeURIComponent(finalUrl) }
                   ]
                 });
               } else {
@@ -637,7 +628,7 @@
                         } else {
                           openModal({
                             title:"⚠️ Sem confirmação ainda",
-                            hint:"Se continuar, pode ser que o webhook não esteja chegando. Veja configuração do webhook (/api/mp-webhook).",
+                            hint:"Se continuar, provavelmente o webhook não está chegando. Confira URL do webhook e logs.",
                             linkText:"",
                             buttons:[ { type:"a", label:"🔗 Abrir pagamento", href: checkoutUrl } ]
                           });
@@ -653,15 +644,64 @@
       });
 
     }catch(e){
-      alert("Erro: " + (e.message || e));
+      openModal({
+        title: "❌ Erro",
+        hint: "O servidor respondeu com erro. Copie o detalhe abaixo e me mande.",
+        linkText: String(e?.message || e),
+        buttons: [
+          { label:"📋 Copiar detalhe", onClick: async ()=>{
+              try{ await navigator.clipboard.writeText(String(e?.message || e)); }catch(err){}
+              alert("Copiado ✅");
+            }
+          }
+        ]
+      });
     }finally{
       btn.disabled = false;
-      btn.textContent = "💳 Pagar " + PRICE_LABEL + " e gerar link";
+      btn.textContent = old;
     }
   }
 
   $("#btnPay").addEventListener("click", payAndGenerateLink);
   $("#btnPay").textContent = "💳 Pagar " + PRICE_LABEL + " e gerar link";
+
+  // =============================
+  // Diagnóstico rápido
+  // =============================
+  async function diagPublish(){
+    // tenta chamar /api/publish com um HTML mínimo
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Teste</title></head><body>ok</body></html>`;
+    openModal({ title:"🧪 Diagnóstico", hint:"Chamando /api/publish com HTML mínimo…", linkText:"", buttons:[] });
+
+    try{
+      const r = await fetch("/api/publish", {
+        method:"POST",
+        headers:{ "content-type":"application/json" },
+        body: JSON.stringify({ theme:"amor", html }),
+        cache:"no-store"
+      });
+
+      const { text, json } = await readResponseSmart(r);
+      const payload = json ? pretty(json) : text;
+
+      openModal({
+        title: r.ok ? "✅ /api/publish OK" : `❌ /api/publish Falhou (${r.status})`,
+        hint: "Aqui está a resposta completa do servidor:",
+        linkText: payload || "(vazio)",
+        buttons: [
+          { label:"📋 Copiar", onClick: async ()=>{ try{ await navigator.clipboard.writeText(payload || ""); }catch(e){} alert("Copiado ✅"); } }
+        ]
+      });
+    }catch(e){
+      openModal({
+        title:"❌ Diagnóstico falhou",
+        hint:"Erro no fetch:",
+        linkText: String(e?.message || e),
+        buttons:[]
+      });
+    }
+  }
+  $("#btnDiag").addEventListener("click", diagPublish);
 
   // =============================
   // Templates
@@ -726,7 +766,7 @@ ${body}
       ? (
           mode === "export"
             ? `./imagens/${safeName(photo.name)}`
-            : (photo._dataUrl || "") // preview/publish embed
+            : (photo._dataUrl || "")
         )
       : "";
 
@@ -803,3 +843,4 @@ ${body}
 </script>
 </body>
 </html>
+
