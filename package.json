@@ -1,8 +1,11 @@
 {
   "name": "cartinhas-builder",
-  "version": "1.0.0",
   "private": true,
+  "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": "20.x"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.0"
   }
