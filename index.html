@@ -1,4 +1,4 @@
-<!doctype html>
+ <!doctype html>
 <html lang="pt-br">
 <head>
   <meta charset="utf-8" />
@@ -132,7 +132,7 @@
       z-index:9999;
     }
     .modal{
-      width:min(720px, 100%);
+      width:min(620px, 100%);
       border-radius: 18px;
       background: rgba(20,20,30,.82);
       border:1px solid rgba(255,255,255,.18);
@@ -335,6 +335,7 @@
   function closeModal(){
     $("#modalBack").style.display = "none";
   }
+
   $("#btnCloseModal").addEventListener("click", closeModal);
   $("#modalBack").addEventListener("click", (e)=>{ if(e.target.id==="modalBack") closeModal(); });
 
@@ -353,7 +354,6 @@
       ],
       generate: (data, asset, mode) => genCartinhaGlass(data, asset, mode)
     },
-
     simples: {
       emoji: "✉️",
       name: "Cartinha Simples",
@@ -481,24 +481,27 @@
   }
   $("#btnExport").addEventListener("click", exportZip);
 
-  async function fetchJsonOrText(url, options){
-    const res = await fetch(url, options);
-    const text = await res.text();
-    let data = null;
-    try { data = JSON.parse(text); } catch {}
-    return { res, text, data };
-  }
-
   async function checkPaidLoop(id){
     const maxTries = 40;
     for(let i=0;i<maxTries;i++){
       await new Promise(r=>setTimeout(r, 3000));
       try{
-        const { res, data } = await fetchJsonOrText("/api/status?id=" + encodeURIComponent(id));
-        if(res.ok && data && data.paid && data.url) return data.url;
+        const res = await fetch("/api/status?id=" + encodeURIComponent(id));
+        const j = await res.json().catch(()=> ({}));
+        if(res.ok && j.paid && j.url) return j.url;
       }catch(e){}
     }
     return null;
+  }
+
+  async function readErrorBody(resp){
+    const ct = resp.headers.get("content-type") || "";
+    if(ct.includes("application/json")){
+      const j = await resp.json().catch(()=> ({}));
+      return JSON.stringify(j, null, 2);
+    }
+    const t = await resp.text().catch(()=> "");
+    return t || `HTTP ${resp.status}`;
   }
 
   async function payAndGenerateLink(){
@@ -509,30 +512,40 @@
     const html = t.generate(data, assets[themeId], "publish");
 
     const btn = $("#btnPay");
-    const old = btn.textContent;
     btn.disabled = true;
     btn.textContent = "⏳ Criando pagamento...";
 
     try{
-      const { res, text, data: j } = await fetchJsonOrText("/api/publish", {
+      const r = await fetch("/api/publish", {
         method:"POST",
         headers:{ "content-type":"application/json" },
         body: JSON.stringify({ theme: themeId, html })
       });
 
-      if(!res.ok){
-        // Aqui agora você vai ver o ERRO REAL:
-        const msg =
-          (j && (j.error || j.message)) ||
-          `Falha (${res.status})\n\nResposta:\n${text.slice(0, 2000)}`;
-        throw new Error(msg);
+      if(!r.ok){
+        const details = await readErrorBody(r);
+        openModal({
+          title: "❌ Erro no servidor (publish)",
+          hint: "Detalhes abaixo (isso é o que sua function respondeu):",
+          linkText: details,
+          buttons: []
+        });
+        return;
       }
+
+      const j = await r.json().catch(()=> ({}));
 
       const checkoutUrl = j.checkout_url;
       const id = j.id;
 
       if(!checkoutUrl || !id){
-        throw new Error("Resposta OK mas sem checkout_url/id. Conteúdo:\n" + JSON.stringify(j, null, 2));
+        openModal({
+          title: "❌ Resposta inesperada",
+          hint: "A API respondeu OK, mas não veio checkout_url/id.",
+          linkText: JSON.stringify(j, null, 2),
+          buttons: []
+        });
+        return;
       }
 
       openModal({
@@ -547,7 +560,7 @@
             }
           },
           { label:"✅ Já paguei — verificar", onClick: async ()=>{
-              openModal({ title:"⏳ Verificando…", hint:"Pode demorar alguns segundos.", linkText:"", buttons: [] });
+              openModal({ title:"⏳ Verificando pagamento…", hint:"Pode levar alguns segundos.", linkText:"", buttons: [] });
               const finalUrl = await checkPaidLoop(id);
               if(finalUrl){
                 openModal({
@@ -563,25 +576,10 @@
               } else {
                 openModal({
                   title: "⚠️ Ainda não confirmou",
-                  hint: "Se você pagou agora, espere e tente de novo. Se nunca confirma, o webhook não está chegando.",
+                  hint: "Se pagou agora, espere um pouco e tente novamente.",
                   linkText: "",
                   buttons: [
-                    { type:"a", label:"🔗 Abrir pagamento", href: checkoutUrl },
-                    { label:"✅ Verificar de novo", onClick: async ()=>{
-                        openModal({ title:"⏳ Verificando…", hint:"Aguarde.", linkText:"", buttons: [] });
-                        const again = await checkPaidLoop(id);
-                        if(again){
-                          openModal({ title:"✅ Link gerado", hint:"Tudo certo!", linkText: again, buttons:[
-                            { label:"📋 Copiar", onClick: async ()=>{ try{ await navigator.clipboard.writeText(again);}catch(e){} alert("Copiado ✅"); } },
-                            { type:"a", label:"🔗 Abrir", href:again }
-                          ]});
-                        } else {
-                          openModal({ title:"⚠️ Sem confirmação", hint:"Provável problema de webhook ou status.", linkText:"", buttons:[
-                            { type:"a", label:"🔗 Abrir pagamento", href: checkoutUrl }
-                          ]});
-                        }
-                      }
-                    }
+                    { type:"a", label:"🔗 Abrir pagamento", href: checkoutUrl }
                   ]
                 });
               }
@@ -591,7 +589,12 @@
       });
 
     }catch(e){
-      alert("Erro:\n\n" + (e.message || e));
+      openModal({
+        title: "❌ Erro",
+        hint: "Falha inesperada no navegador:",
+        linkText: String(e?.message || e),
+        buttons: []
+      });
     }finally{
       btn.disabled = false;
       btn.textContent = "💳 Pagar " + PRICE_LABEL + " e gerar link";
@@ -658,7 +661,11 @@ ${body}
 
     const photo = a.photo;
     const photoSrc = photo
-      ? (mode === "export" ? `./imagens/${safeName(photo.name)}` : (photo._dataUrl || ""))
+      ? (
+          mode === "export"
+            ? `./imagens/${safeName(photo.name)}`
+            : (photo._dataUrl || "")
+        )
       : "";
 
     return baseDoc(title, `
@@ -704,7 +711,12 @@ ${body}
           <div style="padding:16px; border-radius:18px; border:1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.18);">
             <div style="white-space:pre-wrap; line-height:1.75;">${escHtml(msg)}</div>
           </div>
-          ${from ? `<div style="margin-top:14px; text-align:right; color:rgba(255,255,255,.82);">${escHtml(from)}</div>` : ""}
+
+          ${from ? `
+            <div style="margin-top:14px; text-align:right; color:rgba(255,255,255,.82);">
+              ${escHtml(from)}
+            </div>
+          ` : ""}
         </div>
       </div>
     `);
@@ -714,7 +726,9 @@ ${body}
     return baseDoc("Preview", `
       <div class="card">
         <div class="h"><div class="h1">👈 Escolha um tema</div></div>
-        <div class="b"><div class="muted">Selecione um tema na esquerda pra começar a escrever.</div></div>
+        <div class="b">
+          <div class="muted">Selecione um tema na esquerda pra começar a escrever.</div>
+        </div>
       </div>
     `);
   }
@@ -724,3 +738,4 @@ ${body}
 </script>
 </body>
 </html>
+
