@@ -132,7 +132,7 @@
       z-index:9999;
     }
     .modal{
-      width:min(620px, 100%);
+      width:min(740px, 100%);
       border-radius: 18px;
       background: rgba(20,20,30,.82);
       border:1px solid rgba(255,255,255,.18);
@@ -170,6 +170,18 @@
     .mini a{ color:#9bd1ff; text-decoration:none; word-break:break-all }
     .mini a:hover{ text-decoration:underline }
 
+    .pill{
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.18);
+      font-size:12px;
+      color: rgba(255,255,255,.80);
+    }
+
     @media (max-width: 980px){
       .wrap{grid-template-columns: 1fr; }
       .preview{height: 70vh;}
@@ -184,14 +196,16 @@
   <header>
     <div class="brand">
       <h1>💌 Construtor de Cartinhas</h1>
-      <p>Escolha um tema, escreva. Pague e gere um link. Se perder, recupere por e-mail (OTP) ou pelo histórico do aparelho.</p>
+      <p>Escolha um tema, escreva. Pague e gere um link. Se perder, recupere neste mesmo aparelho (histórico local).</p>
+      <div class="hint" style="margin-top:4px;">
+        ⚠️ O histórico local funciona só neste navegador/aparelho. Se limpar os dados do navegador, ele pode sumir.
+      </div>
     </div>
 
-    <!-- ✅ Header com input de e-mail antes dos botões (como na print) -->
-    <div class="bar" style="align-items:center">
+    <div class="bar">
+      <span class="pill" id="localCountPill" title="Quantidade de links salvos neste aparelho">🕘 0 salvos</span>
 
-      <a class="btn" href="/recover.html" style="text-decoration:none" target="_blank" rel="noopener">🔎 Recuperar link</a>
-
+      <button class="btn" id="btnMyLinks">🕘 Meus links</button>
       <button class="btn" id="btnPay" disabled>💳 Pagar R$ 4,90 e gerar link</button>
       <button class="btn" id="btnExport" disabled>⬇️ Exportar ZIP</button>
     </div>
@@ -259,50 +273,66 @@
   const PRICE_LABEL = "R$ 4,90";
   const $ = (s) => document.querySelector(s);
 
-  // ✅ LocalStorage (como na print)
-  const EMAIL_KEY = "cartinhas:email";
+  // =========================
+  // LocalStorage (histórico local)
+  // =========================
+  const STORAGE_KEY = "cartinhas_local_v1";
   const LAST_KEY  = "cartinhas:last";
-  const LEGACY_LAST_KEY = "cartinhas_last_link_v1"; // compatibilidade com seu código antigo
 
-  function getEmail(){
-    return ($("#email")?.value || localStorage.getItem(EMAIL_KEY) || "").trim();
+  function loadLocalCartinhas(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    }catch(e){
+      return [];
+    }
   }
-  function setEmail(v){
-    const email = String(v||"").trim();
-    if($("#email")) $("#email").value = email;
-    if(email) localStorage.setItem(EMAIL_KEY, email);
+  function saveLocalCartinhas(arr){
+    try{
+      // limita pra não crescer infinito
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(arr.slice(0, 50)));
+    }catch(e){}
   }
-
-  window.addEventListener("DOMContentLoaded", ()=>{
-    setEmail(localStorage.getItem(EMAIL_KEY) || "");
-    $("#email")?.addEventListener("input", (e)=> setEmail(e.target.value));
-  });
+  function upsertLocalCartinha(item){
+    const arr = loadLocalCartinhas();
+    const idx = arr.findIndex(x => x.id === item.id);
+    if(idx >= 0){
+      arr[idx] = { ...arr[idx], ...item };
+    }else{
+      arr.unshift(item);
+    }
+    arr.sort((a,b)=> (new Date(b.createdAt||0)) - (new Date(a.createdAt||0)));
+    saveLocalCartinhas(arr);
+    updateLocalPill();
+  }
+  function removeLocalCartinha(id){
+    const arr = loadLocalCartinhas().filter(x => x.id !== id);
+    saveLocalCartinhas(arr);
+    updateLocalPill();
+  }
+  function updateLocalPill(){
+    const n = loadLocalCartinhas().length;
+    const pill = $("#localCountPill");
+    if(pill) pill.textContent = `🕘 ${n} salvos`;
+  }
 
   function saveLastLink(entry){
-    // ✅ garante o formato pedido {id, url, at} quando existir finalUrl
     const base = { at: Date.now(), ...(entry || {}) };
-
-    // se tiver ts, mantém; se não tiver, replica em ts (pro seu render atual)
     if(!base.ts) base.ts = base.at;
-
-    try{
-      localStorage.setItem(LAST_KEY, JSON.stringify(base));
-    }catch(e){}
+    try{ localStorage.setItem(LAST_KEY, JSON.stringify(base)); }catch(e){}
     renderLocalHistory();
   }
-
   function loadLastLink(){
     try{
-      const raw = localStorage.getItem(LAST_KEY) || localStorage.getItem(LEGACY_LAST_KEY);
+      const raw = localStorage.getItem(LAST_KEY);
       if(!raw) return null;
       const obj = JSON.parse(raw);
-      // normaliza timestamp
       if(obj && !obj.at && obj.ts) obj.at = obj.ts;
       if(obj && !obj.ts && obj.at) obj.ts = obj.at;
       return obj;
     }catch(e){ return null; }
   }
-
   function renderLocalHistory(){
     const box = $("#localHistoryBox");
     if(!box) return;
@@ -315,7 +345,15 @@
     $("#localLastLink").href = last.url;
     $("#localLastLink").textContent = last.url;
     $("#localLastMeta").textContent =
-      `Tema: ${last.theme || "-"} • Email: ${last.email || "-"} • ${new Date(last.at || last.ts || Date.now()).toLocaleString()}`;
+      `Tema: ${last.theme || "-"} • ${new Date(last.at || last.ts || Date.now()).toLocaleString("pt-BR")}`;
+  }
+
+  function formatDateBR(iso){
+    try{
+      return new Date(iso).toLocaleString("pt-BR");
+    }catch(e){
+      return iso || "";
+    }
   }
 
   function escHtml(s){
@@ -380,6 +418,7 @@
 
   function openModal({ title, hint, linkText, buttons }){
     $("#modalTitle").textContent = title || "✅";
+    // OBS: modalHint pode virar HTML em alguns casos
     $("#modalHint").textContent = hint || "";
     const linkBox = $("#modalLink");
     const btns = $("#modalBtns");
@@ -420,6 +459,112 @@
 
   $("#btnCloseModal").addEventListener("click", closeModal);
   $("#modalBack").addEventListener("click", (e)=>{ if(e.target.id==="modalBack") closeModal(); });
+
+  function makeMyLinksHtml(){
+    const items = loadLocalCartinhas();
+    if(!items.length){
+      return `<div class="hint">Nenhum link salvo neste aparelho ainda.</div>`;
+    }
+
+    return `
+      <div class="hint" style="margin-bottom:10px;">
+        Estes links ficam salvos <b>somente neste aparelho/navegador</b>.
+      </div>
+      <div style="display:grid; gap:10px;">
+        ${items.map(it=>{
+          const status = it.finalUrl ? "✅ aprovado" : "⏳ pendente";
+          const primary = it.finalUrl || it.checkoutUrl || "";
+          const title = it.title || `Cartinha (${it.theme||"tema"})`;
+          return `
+            <div style="border:1px solid rgba(255,255,255,.14); background: rgba(0,0,0,.18); border-radius:16px; padding:12px;">
+              <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+                <div style="min-width:0;">
+                  <div style="font-size:13px; font-weight:600;">${escHtml(title)}</div>
+                  <div class="hint" style="margin-top:4px;">
+                    ${status} • ${escHtml(formatDateBR(it.createdAt))}
+                  </div>
+                  <div class="hint" style="margin-top:6px; word-break:break-all;">
+                    ${escHtml(primary)}
+                  </div>
+                </div>
+                <button class="btn" data-del="${escAttr(it.id)}" title="Remover do histórico">🗑️</button>
+              </div>
+
+              <div class="rowBtns" style="margin-top:10px;">
+                ${primary ? `<a class="btn" href="${escAttr(primary)}" target="_blank" rel="noopener">🔗 Abrir</a>` : ""}
+                ${primary ? `<button class="btn" data-copy="${escAttr(primary)}">📋 Copiar</button>` : ""}
+                ${!it.finalUrl ? `<button class="btn" data-check="${escAttr(it.id)}">🔄 Verificar pagamento</button>` : ""}
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  async function checkAndUpdateOne(id){
+    const res = await fetch("/api/status?id=" + encodeURIComponent(id));
+    const j = await res.json().catch(()=> ({}));
+    if(res.ok && j && j.url){
+      upsertLocalCartinha({ id, finalUrl: j.url, status: "approved" });
+      // salva também como "último" para o box do editor
+      saveLastLink({ id, url: j.url, at: Date.now(), stage:"paid" });
+      return j.url;
+    }
+    return null;
+  }
+
+  function openMyLinksModal(){
+    openModal({
+      title: "🕘 Links salvos neste aparelho",
+      hint: "",
+      linkText: "",
+      buttons: []
+    });
+
+    const hintEl = $("#modalHint");
+    hintEl.innerHTML = makeMyLinksHtml();
+
+    hintEl.querySelectorAll("[data-copy]").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const v = btn.getAttribute("data-copy");
+        try{ await navigator.clipboard.writeText(v); }catch(e){}
+        alert("Copiado ✅");
+      });
+    });
+
+    hintEl.querySelectorAll("[data-del]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const id = btn.getAttribute("data-del");
+        removeLocalCartinha(id);
+        hintEl.innerHTML = makeMyLinksHtml();
+      });
+    });
+
+    hintEl.querySelectorAll("[data-check]").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const id = btn.getAttribute("data-check");
+        btn.disabled = true;
+        btn.textContent = "⏳ verificando...";
+        try{
+          const url = await checkAndUpdateOne(id);
+          if(url){
+            alert("Aprovado ✅ Link atualizado!");
+          }else{
+            alert("Ainda pendente. Tente novamente em alguns segundos.");
+          }
+        }catch(e){
+          alert("Erro ao verificar.");
+        }finally{
+          btn.disabled = false;
+          btn.textContent = "🔄 Verificar pagamento";
+          hintEl.innerHTML = makeMyLinksHtml();
+        }
+      });
+    });
+  }
+
+  $("#btnMyLinks").addEventListener("click", openMyLinksModal);
 
   const THEMES = {
     amor: {
@@ -590,10 +735,6 @@
   async function payAndGenerateLink(){
     if(!themeId) return;
 
-    // ✅ envia email mesmo se vazio (fallback), como na print
-    let email = (getEmail() || "sem_email@local").trim().toLowerCase();
-    if(email !== "sem_email@local" && !email.includes("@")) email = "sem_email@local";
-
     const t = THEMES[themeId];
     const data = state[themeId] || {};
     const html = t.generate(data, assets[themeId], "publish");
@@ -606,7 +747,7 @@
       const r = await fetch("/api/publish", {
         method:"POST",
         headers:{ "content-type":"application/json" },
-        body: JSON.stringify({ theme: themeId, html, email })
+        body: JSON.stringify({ theme: themeId, html })
       });
 
       if(!r.ok){
@@ -621,7 +762,6 @@
       }
 
       const j = await r.json().catch(()=> ({}));
-
       const checkoutUrl = j.checkout_url;
       const id = j.id;
 
@@ -635,12 +775,20 @@
         return;
       }
 
-      // salva o “pedido” local (ainda não pago)
-      saveLastLink({ stage:"created", id, theme: themeId, email, checkoutUrl, at: Date.now() });
+      // salva local assim que cria (pendente)
+      upsertLocalCartinha({
+        id,
+        createdAt: new Date().toISOString(),
+        theme: themeId,
+        status: "pending",
+        checkoutUrl,
+        finalUrl: null,
+        title: (state[themeId]?.title || `Cartinha (${themeId})`)
+      });
 
       openModal({
         title: "💳 Pague no Pix para liberar o link",
-        hint: "Abra o pagamento, conclua no Pix e depois clique em “Já paguei”.",
+        hint: "Abra o pagamento, conclua no Pix e depois clique em “Já paguei”. (O pedido ficou salvo no histórico local.)",
         linkText: checkoutUrl,
         buttons: [
           { type:"a", label:"🔗 Abrir pagamento", href: checkoutUrl },
@@ -649,22 +797,23 @@
               alert("Copiado ✅");
             }
           },
+          { label:"🕘 Ver meus links", onClick: openMyLinksModal },
           { label:"✅ Já paguei — verificar", onClick: async ()=>{
               openModal({ title:"⏳ Verificando pagamento…", hint:"Pode levar alguns segundos.", linkText:"", buttons: [] });
               const finalUrl = await checkPaidLoop(id);
               if(finalUrl){
-                // ✅ salva no localStorage quando gerar o link final (como na print)
-                saveLastLink({ id, url: finalUrl, at: Date.now(), stage:"paid", theme: themeId, email });
+                upsertLocalCartinha({ id, status:"approved", finalUrl });
+                saveLastLink({ id, url: finalUrl, at: Date.now(), stage:"paid", theme: themeId });
 
                 openModal({
                   title: "✅ Link gerado",
-                  hint: "Copie e mande no WhatsApp/Instagram. Também ficou salvo neste aparelho e pode ser recuperado por e-mail em /recover.",
+                  hint: "Copie e mande no WhatsApp/Instagram. Ele também ficou salvo no histórico local deste aparelho.",
                   linkText: finalUrl,
                   buttons: [
                     { label:"📋 Copiar", onClick: async ()=>{ try{ await navigator.clipboard.writeText(finalUrl);}catch(e){} alert("Copiado ✅"); } },
                     { type:"a", label:"🔗 Abrir", href:finalUrl },
                     { type:"a", label:"💬 WhatsApp", href:"https://wa.me/?text="+encodeURIComponent(finalUrl) },
-                    { type:"a", label:"🔑 Recuperar depois", href:"/recover.html?email="+encodeURIComponent(email) }
+                    { label:"🕘 Meus links", onClick: openMyLinksModal }
                   ]
                 });
 
@@ -672,10 +821,11 @@
               } else {
                 openModal({
                   title: "⚠️ Ainda não confirmou",
-                  hint: "Se pagou agora, espere um pouco e tente novamente.",
+                  hint: "Se pagou agora, espere um pouco e tente novamente. Você também pode ver em “Meus links”.",
                   linkText: "",
                   buttons: [
-                    { type:"a", label:"🔗 Abrir pagamento", href: checkoutUrl }
+                    { type:"a", label:"🔗 Abrir pagamento", href: checkoutUrl },
+                    { label:"🕘 Meus links", onClick: openMyLinksModal }
                   ]
                 });
               }
@@ -844,31 +994,30 @@ ${body}
 
     const finalUrl = await checkPaidLoop(id);
     if(finalUrl){
-      let email = (getEmail() || "sem_email@local").trim().toLowerCase();
-      if(email !== "sem_email@local" && !email.includes("@")) email = "sem_email@local";
-
-      saveLastLink({ id, url: finalUrl, at: Date.now(), stage:"paid", theme: themeId || "", email });
+      upsertLocalCartinha({ id, status:"approved", finalUrl });
+      saveLastLink({ id, url: finalUrl, at: Date.now(), stage:"paid" });
 
       openModal({
         title:"✅ Link recuperado",
-        hint:"Pagamento confirmado. Copie o link:",
+        hint:"Pagamento confirmado. Copie o link (ele também ficou salvo no histórico local):",
         linkText: finalUrl,
         buttons:[
           { label:"📋 Copiar", onClick: async ()=>{ try{ await navigator.clipboard.writeText(finalUrl);}catch(e){} alert("Copiado ✅"); } },
-          { type:"a", label:"🔗 Abrir", href: finalUrl }
+          { type:"a", label:"🔗 Abrir", href: finalUrl },
+          { label:"🕘 Meus links", onClick: openMyLinksModal }
         ]
       });
 
-      // limpa a query pra não ficar rechecando em refresh
-      try{
-        history.replaceState({}, "", location.pathname);
-      }catch(e){}
+      try{ history.replaceState({}, "", location.pathname); }catch(e){}
+      renderLocalHistory();
     } else {
       openModal({
         title:"⚠️ Ainda não confirmado",
-        hint:"Se você acabou de pagar, pode levar alguns segundos. Volte e clique em “Já paguei” ou tente de novo em instantes.",
+        hint:"Se você acabou de pagar, pode levar alguns segundos. Você pode tentar de novo pelo “Meus links”.",
         linkText:"",
-        buttons:[]
+        buttons:[
+          { label:"🕘 Meus links", onClick: openMyLinksModal }
+        ]
       });
     }
   }
@@ -876,10 +1025,9 @@ ${body}
   renderThemes();
   updatePreview();
   renderLocalHistory();
+  updateLocalPill();
   autoCheckIfReturnedFromPayment();
 </script>
 </body>
 </html>
-
-
 
