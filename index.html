@@ -33,7 +33,7 @@
     .brand{display:flex; flex-direction:column; gap:4px;}
     .brand h1{margin:0; font-size:16px;}
     .brand p{margin:0; font-size:12px; color:var(--muted)}
-    .bar{display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;}
+    .bar{display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; align-items:center;}
 
     .wrap{
       padding: 0 18px 18px;
@@ -186,8 +186,16 @@
       <h1>💌 Construtor de Cartinhas</h1>
       <p>Escolha um tema, escreva. Pague e gere um link. Se perder, recupere por e-mail (OTP) ou pelo histórico do aparelho.</p>
     </div>
-    <div class="bar">
-      <a class="btn" href="/recover.html" target="_blank" rel="noopener">🔑 Recuperar link</a>
+
+    <!-- ✅ Header com input de e-mail antes dos botões (como na print) -->
+    <div class="bar" style="align-items:center">
+      <div style="min-width:260px">
+        <label style="display:block;font-size:12px;color:rgba(255,255,255,.68)">Seu e-mail (pra recuperar o link)</label>
+        <input id="email" type="email" placeholder="voce@exemplo.com" style="margin-top:6px" />
+      </div>
+
+      <a class="btn" href="/recover.html" style="text-decoration:none" target="_blank" rel="noopener">🔎 Recuperar link</a>
+
       <button class="btn" id="btnPay" disabled>💳 Pagar R$ 4,90 e gerar link</button>
       <button class="btn" id="btnExport" disabled>⬇️ Exportar ZIP</button>
     </div>
@@ -208,16 +216,6 @@
           <div class="hint" id="themeHint" style="margin-bottom:10px;"></div>
 
           <div class="grid" id="form"></div>
-
-          <div class="sep"></div>
-
-          <div>
-            <label for="buyerEmail">Seu e-mail (para recuperar o link depois)</label>
-            <input id="buyerEmail" type="email" placeholder="seuemail@exemplo.com" />
-            <div class="hint" style="margin-top:6px;">
-              Importante: esse e-mail será usado para recuperar links pagos em <b>/recover</b>.
-            </div>
-          </div>
 
           <div class="hint" style="margin-top:10px;">
             No celular: escolha a foto e aguarde carregar. Se não aparecer no preview, troque e tente de novo.
@@ -265,20 +263,47 @@
   const PRICE_LABEL = "R$ 4,90";
   const $ = (s) => document.querySelector(s);
 
-  const LS_KEY = "cartinhas_last_link_v1";
+  // ✅ LocalStorage (como na print)
+  const EMAIL_KEY = "cartinhas:email";
+  const LAST_KEY  = "cartinhas:last";
+  const LEGACY_LAST_KEY = "cartinhas_last_link_v1"; // compatibilidade com seu código antigo
+
+  function getEmail(){
+    return ($("#email")?.value || localStorage.getItem(EMAIL_KEY) || "").trim();
+  }
+  function setEmail(v){
+    const email = String(v||"").trim();
+    if($("#email")) $("#email").value = email;
+    if(email) localStorage.setItem(EMAIL_KEY, email);
+  }
+
+  window.addEventListener("DOMContentLoaded", ()=>{
+    setEmail(localStorage.getItem(EMAIL_KEY) || "");
+    $("#email")?.addEventListener("input", (e)=> setEmail(e.target.value));
+  });
 
   function saveLastLink(entry){
+    // ✅ garante o formato pedido {id, url, at} quando existir finalUrl
+    const base = { at: Date.now(), ...(entry || {}) };
+
+    // se tiver ts, mantém; se não tiver, replica em ts (pro seu render atual)
+    if(!base.ts) base.ts = base.at;
+
     try{
-      localStorage.setItem(LS_KEY, JSON.stringify(entry));
+      localStorage.setItem(LAST_KEY, JSON.stringify(base));
     }catch(e){}
     renderLocalHistory();
   }
 
   function loadLastLink(){
     try{
-      const raw = localStorage.getItem(LS_KEY);
+      const raw = localStorage.getItem(LAST_KEY) || localStorage.getItem(LEGACY_LAST_KEY);
       if(!raw) return null;
-      return JSON.parse(raw);
+      const obj = JSON.parse(raw);
+      // normaliza timestamp
+      if(obj && !obj.at && obj.ts) obj.at = obj.ts;
+      if(obj && !obj.ts && obj.at) obj.ts = obj.at;
+      return obj;
     }catch(e){ return null; }
   }
 
@@ -293,7 +318,8 @@
     box.style.display = "block";
     $("#localLastLink").href = last.url;
     $("#localLastLink").textContent = last.url;
-    $("#localLastMeta").textContent = `Tema: ${last.theme || "-"} • Email: ${last.email || "-"} • ${new Date(last.ts || Date.now()).toLocaleString()}`;
+    $("#localLastMeta").textContent =
+      `Tema: ${last.theme || "-"} • Email: ${last.email || "-"} • ${new Date(last.at || last.ts || Date.now()).toLocaleString()}`;
   }
 
   function escHtml(s){
@@ -565,24 +591,12 @@
     return t || `HTTP ${resp.status}`;
   }
 
-  function getBuyerEmail(){
-    const email = ($("#buyerEmail")?.value || "").trim().toLowerCase();
-    return email;
-  }
-
   async function payAndGenerateLink(){
     if(!themeId) return;
 
-    const email = getBuyerEmail();
-    if(!email || !email.includes("@")){
-      openModal({
-        title: "⚠️ Falta seu e-mail",
-        hint: "Digite um e-mail válido para conseguirmos recuperar o link depois.",
-        linkText: "",
-        buttons: []
-      });
-      return;
-    }
+    // ✅ envia email mesmo se vazio (fallback), como na print
+    let email = (getEmail() || "sem_email@local").trim().toLowerCase();
+    if(email !== "sem_email@local" && !email.includes("@")) email = "sem_email@local";
 
     const t = THEMES[themeId];
     const data = state[themeId] || {};
@@ -626,7 +640,7 @@
       }
 
       // salva o “pedido” local (ainda não pago)
-      saveLastLink({ stage:"created", id, theme: themeId, email, checkoutUrl, ts: Date.now() });
+      saveLastLink({ stage:"created", id, theme: themeId, email, checkoutUrl, at: Date.now() });
 
       openModal({
         title: "💳 Pague no Pix para liberar o link",
@@ -643,7 +657,8 @@
               openModal({ title:"⏳ Verificando pagamento…", hint:"Pode levar alguns segundos.", linkText:"", buttons: [] });
               const finalUrl = await checkPaidLoop(id);
               if(finalUrl){
-                saveLastLink({ stage:"paid", id, theme: themeId, email, url: finalUrl, ts: Date.now() });
+                // ✅ salva no localStorage quando gerar o link final (como na print)
+                saveLastLink({ id, url: finalUrl, at: Date.now(), stage:"paid", theme: themeId, email });
 
                 openModal({
                   title: "✅ Link gerado",
@@ -833,8 +848,10 @@ ${body}
 
     const finalUrl = await checkPaidLoop(id);
     if(finalUrl){
-      const email = getBuyerEmail();
-      saveLastLink({ stage:"paid", id, theme: themeId || "", email: email || "", url: finalUrl, ts: Date.now() });
+      let email = (getEmail() || "sem_email@local").trim().toLowerCase();
+      if(email !== "sem_email@local" && !email.includes("@")) email = "sem_email@local";
+
+      saveLastLink({ id, url: finalUrl, at: Date.now(), stage:"paid", theme: themeId || "", email });
 
       openModal({
         title:"✅ Link recuperado",
