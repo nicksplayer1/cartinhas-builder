@@ -1,12 +1,12 @@
- import { createClient } from "@supabase/supabase-js";
-import { createHash, randomInt } from "node:crypto";
-
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+import { createHmac } from "node:crypto";
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const MAIL_FROM = process.env.MAIL_FROM || "Cartinhas <onboarding@resend.dev>";
 const OTP_SECRET = process.env.OTP_SECRET;
+
+// janela do código: 5 minutos
+const STEP_SECONDS = 300;
+const DIGITS = 6;
 
 function json(res, status, data) {
   res.statusCode = status;
@@ -15,25 +15,41 @@ function json(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
-async function readJsonBody(req) {
+async function readJson(req) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  for await (const c of req) chunks.push(c);
   const raw = Buffer.concat(chunks).toString("utf-8").trim();
   if (!raw) return {};
   try { return JSON.parse(raw); } catch { return null; }
 }
 
-function sha256(s) {
-  return createHash("sha256").update(s).digest("hex");
+function normalizeEmail(email) {
+  return String(email || "").trim().toLowerCase();
 }
 
-function getBaseUrl(req) {
-  const proto = (req.headers["x-forwarded-proto"] || "https").toString();
-  const host = (req.headers["x-forwarded-host"] || req.headers.host || "").toString();
-  return `${proto}://${host}`.replace(/\/+$/, "");
+// HOTP padrão (HMAC-SHA1) + truncagem dinâmica
+function hotp(secretBuf, counter) {
+  const b = Buffer.alloc(8);
+  b.writeBigUInt64BE(BigInt(counter));
+  const h = createHmac("sha1", secretBuf).update(b).digest();
+  const o = h[h.length - 1] & 0xf;
+  const code =
+    ((h[o] & 0x7f) << 24) |
+    ((h[o + 1] & 0xff) << 16) |
+    ((h[o + 2] & 0xff) << 8) |
+    (h[o + 3] & 0xff);
+  return code;
 }
 
-async function sendEmail(to, subject, html) {
+function otpForEmailNow(email) {
+  // segredo por email: HMAC(OTP_SECRET, email)
+  const perEmailSecret = createHmac("sha256", OTP_SECRET).update(email).digest();
+  const counter = Math.floor(Date.now() / 1000 / STEP_SECONDS);
+  const num = hotp(perEmailSecret, counter) % (10 ** DIGITS);
+  return String(num).padStart(DIGITS, "0");
+}
+
+async function sendWithResend({ to, subject, html }) {
   const r = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -50,56 +66,41 @@ async function sendEmail(to, subject, html) {
 
   const j = await r.json().catch(() => ({}));
   if (!r.ok) {
-    throw new Error(`Resend error (${r.status}): ${JSON.stringify(j)}`);
+    throw new Error(`Resend failed (${r.status}): ${JSON.stringify(j)}`);
   }
   return j;
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
+  try {
+    if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return json(res, 500, { error: "Supabase env missing" });
-  if (!RESEND_API_KEY || !OTP_SECRET) return json(res, 500, { error: "Resend/OTP env missing" });
+    if (!RESEND_API_KEY) return json(res, 500, { error: "RESEND_API_KEY missing" });
+    if (!OTP_SECRET) return json(res, 500, { error: "OTP_SECRET missing" });
 
-  const body = await readJsonBody(req);
-  if (body === null) return json(res, 400, { error: "Invalid JSON" });
+    const body = await readJson(req);
+    if (body === null) return json(res, 400, { error: "Invalid JSON" });
 
-  const email = String(body.email || "").trim().toLowerCase();
-  if (!email || !email.includes("@")) return json(res, 400, { error: "Invalid email" });
+    const email = normalizeEmail(body.email);
+    if (!email || !email.includes("@")) return json(res, 400, { error: "Invalid email" });
 
-  // gera OTP 6 dígitos
-  const code = String(randomInt(0, 1000000)).padStart(6, "0");
-  const code_hash = sha256(`${code}:${OTP_SECRET}`);
-  const expires_at = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 min
+    const code = otpForEmailNow(email);
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+    await sendWithResend({
+      to: email,
+      subject: "Seu código para recuperar a cartinha",
+      html: `
+        <div style="font-family:Arial,sans-serif;line-height:1.5">
+          <h2>Recuperar link da cartinha</h2>
+          <p>Seu código é:</p>
+          <div style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</div>
+          <p>Ele expira em ~5 minutos.</p>
+        </div>
+      `,
+    });
 
-  // upsert por email
-  const up = await supabase
-    .from("recover_otps")
-    .upsert({ email, code_hash, expires_at, attempts: 0 }, { onConflict: "email" });
-
-  if (up.error) return json(res, 500, { error: up.error.message });
-
-  const baseUrl = getBaseUrl(req);
-  const recoverUrl = `${baseUrl}/recover.html?email=${encodeURIComponent(email)}`;
-
-  // manda e-mail
-  await sendEmail(
-    email,
-    "Código de recuperação da sua cartinha",
-    `
-      <div style="font-family:Arial,sans-serif;line-height:1.5">
-        <h2>Seu código de recuperação</h2>
-        <p>Use este código (válido por <b>10 minutos</b>):</p>
-        <p style="font-size:24px;letter-spacing:2px"><b>${code}</b></p>
-        <p>Abra a página de recuperação:</p>
-        <p><a href="${recoverUrl}">${recoverUrl}</a></p>
-      </div>
-    `
-  );
-
-  // não revela se existe compra ou não — melhor segurança
-  return json(res, 200, { ok: true });
+    return json(res, 200, { ok: true });
+  } catch (e) {
+    return json(res, 500, { error: e?.message || String(e) });
+  }
 }
-
