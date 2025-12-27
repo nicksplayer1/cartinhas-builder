@@ -1,4 +1,5 @@
- import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
+import crypto from "crypto";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -7,7 +8,7 @@ const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || "cartinha";
 const MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
 const PRICE_CENTS = Number(process.env.PRICE_CENTS || "490");
 
-// PUBLIC_BASE_URL é útil, mas vamos ter fallback automático usando o Host da request
+// PUBLIC_BASE_URL é útil, mas fallback pelo host da request funciona bem (prod/preview)
 const ENV_PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
 
 function json(res, status, data) {
@@ -18,8 +19,6 @@ function json(res, status, data) {
 }
 
 async function readJsonBody(req) {
-  // Em Vercel Functions (não Next), req.body pode vir vazio.
-  // Então lemos o stream e fazemos JSON.parse.
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
   const raw = Buffer.concat(chunks).toString("utf-8").trim();
@@ -27,14 +26,13 @@ async function readJsonBody(req) {
   try {
     return JSON.parse(raw);
   } catch {
-    return null; // inválido
+    return null;
   }
 }
 
 function getBaseUrl(req) {
   if (ENV_PUBLIC_BASE_URL) return ENV_PUBLIC_BASE_URL;
 
-  // fallback: usa host da request (bom pra preview domains também)
   const proto = (req.headers["x-forwarded-proto"] || "https").toString();
   const host = (req.headers["x-forwarded-host"] || req.headers.host || "").toString();
   return `${proto}://${host}`.replace(/\/+$/, "");
@@ -43,7 +41,6 @@ function getBaseUrl(req) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
 
-  // valida envs cedo
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     return json(res, 500, { error: "Supabase env missing" });
   }
@@ -65,7 +62,7 @@ export default async function handler(req, res) {
     const id = crypto.randomUUID();
     const storagePath = `cartinhas/${id}/index.html`;
 
-    // 1) upload HTML
+    // 1) Upload HTML
     const up = await supabase.storage
       .from(SUPABASE_BUCKET)
       .upload(storagePath, Buffer.from(html, "utf-8"), {
@@ -78,7 +75,7 @@ export default async function handler(req, res) {
       return json(res, 500, { error: `Storage upload error: ${up.error.message}` });
     }
 
-    // 2) cria checkout (Checkout Pro)
+    // 2) Checkout Pro (Mercado Pago)
     const baseUrl = getBaseUrl(req);
     const notificationUrl = `${baseUrl}/api/mp-webhook`;
 
@@ -112,7 +109,6 @@ export default async function handler(req, res) {
 
     const prefJson = await prefRes.json().catch(() => ({}));
     if (!prefRes.ok) {
-      // devolve detalhes (sem vazar token)
       return json(res, 500, { error: "MP preference error", details: prefJson });
     }
 
@@ -123,7 +119,7 @@ export default async function handler(req, res) {
       return json(res, 500, { error: "MP response missing init_point/id", details: prefJson });
     }
 
-    // 3) salva no banco
+    // 3) Salva no banco
     const ins = await supabase.from("cartinhas").insert({
       id,
       email,
@@ -143,4 +139,3 @@ export default async function handler(req, res) {
     return json(res, 500, { error: e?.message || String(e) });
   }
 }
-
