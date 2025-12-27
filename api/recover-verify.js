@@ -1,4 +1,5 @@
-import { createClient } from "@supabase/supabase-js";
+ import { createClient } from "@supabase/supabase-js";
+import { createHash } from "node:crypto";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -19,13 +20,8 @@ async function readJsonBody(req) {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
-function normalizeEmail(email) {
-  return String(email || "").trim().toLowerCase();
-}
-
-function sha256Hex(str) {
-  const { createHash } = require("crypto");
-  return createHash("sha256").update(str).digest("hex");
+function sha256(s) {
+  return createHash("sha256").update(s).digest("hex");
 }
 
 function getBaseUrl(req) {
@@ -43,55 +39,55 @@ export default async function handler(req, res) {
   const body = await readJsonBody(req);
   if (body === null) return json(res, 400, { error: "Invalid JSON" });
 
-  const email = normalizeEmail(body.email);
+  const email = String(body.email || "").trim().toLowerCase();
   const code = String(body.code || "").trim();
 
-  if (!email.includes("@")) return json(res, 400, { error: "Invalid email" });
+  if (!email || !email.includes("@")) return json(res, 400, { error: "Invalid email" });
   if (!/^\d{6}$/.test(code)) return json(res, 400, { error: "Invalid code" });
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
-  const { data: otp, error: otpErr } = await supabase
-    .from("cartinhas_otp")
-    .select("code_hash, expires_at, attempts")
+  const { data: otpRow, error: otpErr } = await supabase
+    .from("recover_otps")
+    .select("*")
     .eq("email", email)
     .maybeSingle();
 
   if (otpErr) return json(res, 500, { error: otpErr.message });
-  if (!otp) return json(res, 400, { error: "Código não encontrado. Peça um novo." });
+  if (!otpRow) return json(res, 401, { error: "Invalid/expired code" });
 
-  if (otp.attempts >= 5) return json(res, 429, { error: "Muitas tentativas. Peça um novo código." });
+  const now = Date.now();
+  const exp = new Date(otpRow.expires_at).getTime();
+  if (!exp || exp < now) return json(res, 401, { error: "Invalid/expired code" });
 
-  const expires = new Date(otp.expires_at);
-  if (Date.now() > expires.getTime()) return json(res, 400, { error: "Código expirou. Peça um novo." });
-
-  const expected = sha256Hex(`${OTP_SECRET}:${email}:${code}`);
-  if (expected !== otp.code_hash) {
-    await supabase.from("cartinhas_otp").update({ attempts: otp.attempts + 1, updated_at: new Date().toISOString() }).eq("email", email);
-    return json(res, 400, { error: "Código inválido." });
+  const code_hash = sha256(`${code}:${OTP_SECRET}`);
+  if (code_hash !== otpRow.code_hash) {
+    // incrementa attempts (opcional)
+    await supabase.from("recover_otps").update({ attempts: (otpRow.attempts || 0) + 1 }).eq("email", email);
+    return json(res, 401, { error: "Invalid/expired code" });
   }
 
-  // opcional: invalida o código após uso
-  await supabase.from("cartinhas_otp").update({ expires_at: new Date(0).toISOString(), updated_at: new Date().toISOString() }).eq("email", email);
-
-  // busca cartinhas pagas desse email (últimas 10)
+  // válido: busca cartinhas PAGAS deste email
   const { data: rows, error: rowsErr } = await supabase
     .from("cartinhas")
-    .select("id, theme, paid, mp_status, created_at")
+    .select("id, theme, paid, paid_at, mp_status")
     .eq("email", email)
-    .or("paid.eq.true,mp_status.eq.approved")
-    .order("created_at", { ascending: false })
-    .limit(10);
+    .eq("paid", true)
+    .order("paid_at", { ascending: false })
+    .limit(20);
 
   if (rowsErr) return json(res, 500, { error: rowsErr.message });
 
   const baseUrl = getBaseUrl(req);
-  const items = (rows || []).map((r) => ({
+
+  const links = (rows || []).map((r) => ({
     id: r.id,
     theme: r.theme,
-    created_at: r.created_at,
-    link: `${baseUrl}/api/view?id=${r.id}`,
+    paid_at: r.paid_at,
+    mp_status: r.mp_status,
+    url: `${baseUrl}/api/view?id=${encodeURIComponent(r.id)}`,
   }));
 
-  return json(res, 200, { ok: true, items });
+  return json(res, 200, { ok: true, links });
 }
+
