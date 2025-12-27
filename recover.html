@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Recuperar Cartinha</title>
+  <style>
+    body { font-family: system-ui, Arial; background:#0f1115; color:#eaeaea; margin:0; }
+    .wrap { max-width: 560px; margin: 40px auto; padding: 16px; }
+    .card { background:#161a22; border:1px solid #242a36; border-radius:16px; padding:16px; }
+    input, button { width:100%; padding:12px 14px; border-radius:12px; border:1px solid #2b3242; background:#0f1115; color:#eaeaea; }
+    button { background:#2d6bff; border:none; font-weight:700; cursor:pointer; }
+    button:disabled { opacity:.6; cursor:not-allowed; }
+    .row { display:grid; grid-template-columns: 1fr; gap:10px; }
+    .muted { color:#aab3c5; font-size:14px; }
+    .links a { color:#8ab4ff; word-break: break-all; }
+    .err { color:#ff7b7b; }
+    .ok { color:#7bffb0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Recuperar sua Cartinha</h1>
+    <p class="muted">Digite o e-mail usado na compra. Vamos enviar um código de 6 dígitos.</p>
+
+    <div class="card row">
+      <input id="email" type="email" placeholder="seuemail@gmail.com" />
+      <button id="sendBtn">Enviar código</button>
+
+      <input id="code" inputmode="numeric" placeholder="código (6 dígitos)" maxlength="6" />
+      <button id="verifyBtn">Verificar e mostrar links</button>
+
+      <div id="msg" class="muted"></div>
+      <div id="list" class="links"></div>
+    </div>
+
+    <p class="muted" style="margin-top:12px">
+      Dica: se você pagou nesse mesmo aparelho, às vezes o link fica salvo automaticamente na página inicial.
+    </p>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const msg = (t, cls="muted") => { $("msg").className = cls; $("msg").textContent = t; };
+    const setList = (items=[]) => {
+      $("list").innerHTML = items.length
+        ? "<h3>Suas cartinhas</h3>" + items.map(i =>
+            `<p><a href="${i.link}" target="_blank" rel="noopener">Abrir</a><br><span class="muted">${i.id}</span></p>`
+          ).join("")
+        : "";
+    };
+
+    $("sendBtn").onclick = async () => {
+      const email = $("email").value.trim().toLowerCase();
+      if (!email.includes("@")) return msg("Digite um e-mail válido.", "err");
+
+      $("sendBtn").disabled = true;
+      msg("Enviando código...", "muted");
+      setList([]);
+
+      try {
+        const r = await fetch("/api/recover-request", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email })
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || "Falha ao enviar");
+        msg("Código enviado! Verifique seu e-mail (e spam).", "ok");
+      } catch (e) {
+        msg(String(e.message || e), "err");
+      } finally {
+        $("sendBtn").disabled = false;
+      }
+    };
+
+    $("verifyBtn").onclick = async () => {
+      const email = $("email").value.trim().toLowerCase();
+      const code = $("code").value.trim();
+      if (!email.includes("@")) return msg("Digite um e-mail válido.", "err");
+      if (!/^\d{6}$/.test(code)) return msg("Digite o código com 6 dígitos.", "err");
+
+      $("verifyBtn").disabled = true;
+      msg("Verificando...", "muted");
+      setList([]);
+
+      try {
+        const r = await fetch("/api/recover-verify", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email, code })
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || "Falha ao verificar");
+        if (!j.items || !j.items.length) {
+          msg("Nenhuma cartinha paga encontrada pra esse e-mail.", "err");
+          return;
+        }
+        msg("Pronto! Aqui estão seus links:", "ok");
+        setList(j.items);
+      } catch (e) {
+        msg(String(e.message || e), "err");
+      } finally {
+        $("verifyBtn").disabled = false;
+      }
+    };
+  </script>
+</body>
+</html>
