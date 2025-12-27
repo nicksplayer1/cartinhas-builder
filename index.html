@@ -160,6 +160,16 @@
       white-space: pre-wrap;
     }
 
+    .mini{
+      margin-top:10px;
+      padding:10px 12px;
+      border-radius: 14px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.16);
+    }
+    .mini a{ color:#9bd1ff; text-decoration:none; word-break:break-all }
+    .mini a:hover{ text-decoration:underline }
+
     @media (max-width: 980px){
       .wrap{grid-template-columns: 1fr; }
       .preview{height: 70vh;}
@@ -174,9 +184,10 @@
   <header>
     <div class="brand">
       <h1>💌 Construtor de Cartinhas</h1>
-      <p>Escolha um tema, escreva. Depois pague e gere um link (Pix) ou exporte ZIP.</p>
+      <p>Escolha um tema, escreva. Pague e gere um link. Se perder, recupere por e-mail (OTP) ou pelo histórico do aparelho.</p>
     </div>
     <div class="bar">
+      <a class="btn" href="/recover.html" target="_blank" rel="noopener">🔑 Recuperar link</a>
       <button class="btn" id="btnPay" disabled>💳 Pagar R$ 4,90 e gerar link</button>
       <button class="btn" id="btnExport" disabled>⬇️ Exportar ZIP</button>
     </div>
@@ -195,9 +206,27 @@
 
         <div id="editor" style="display:none;">
           <div class="hint" id="themeHint" style="margin-bottom:10px;"></div>
+
           <div class="grid" id="form"></div>
+
+          <div class="sep"></div>
+
+          <div>
+            <label for="buyerEmail">Seu e-mail (para recuperar o link depois)</label>
+            <input id="buyerEmail" type="email" placeholder="seuemail@exemplo.com" />
+            <div class="hint" style="margin-top:6px;">
+              Importante: esse e-mail será usado para recuperar links pagos em <b>/recover</b>.
+            </div>
+          </div>
+
           <div class="hint" style="margin-top:10px;">
             No celular: escolha a foto e aguarde carregar. Se não aparecer no preview, troque e tente de novo.
+          </div>
+
+          <div class="mini" id="localHistoryBox" style="display:none;">
+            <div class="hint" style="margin:0 0 6px;">📌 Último link salvo neste aparelho:</div>
+            <div><a id="localLastLink" href="#" target="_blank" rel="noopener"></a></div>
+            <div class="hint" style="margin-top:6px;" id="localLastMeta"></div>
           </div>
         </div>
 
@@ -235,6 +264,37 @@
 <script>
   const PRICE_LABEL = "R$ 4,90";
   const $ = (s) => document.querySelector(s);
+
+  const LS_KEY = "cartinhas_last_link_v1";
+
+  function saveLastLink(entry){
+    try{
+      localStorage.setItem(LS_KEY, JSON.stringify(entry));
+    }catch(e){}
+    renderLocalHistory();
+  }
+
+  function loadLastLink(){
+    try{
+      const raw = localStorage.getItem(LS_KEY);
+      if(!raw) return null;
+      return JSON.parse(raw);
+    }catch(e){ return null; }
+  }
+
+  function renderLocalHistory(){
+    const box = $("#localHistoryBox");
+    if(!box) return;
+    const last = loadLastLink();
+    if(!last || !last.url){
+      box.style.display = "none";
+      return;
+    }
+    box.style.display = "block";
+    $("#localLastLink").href = last.url;
+    $("#localLastLink").textContent = last.url;
+    $("#localLastMeta").textContent = `Tema: ${last.theme || "-"} • Email: ${last.email || "-"} • ${new Date(last.ts || Date.now()).toLocaleString()}`;
+  }
 
   function escHtml(s){
     return String(s ?? "").replace(/[&<>"']/g, (m)=>( {
@@ -414,6 +474,7 @@
         renderThemes();
         renderForm();
         updatePreview();
+        renderLocalHistory();
       });
       root.appendChild(el);
     });
@@ -504,8 +565,24 @@
     return t || `HTTP ${resp.status}`;
   }
 
+  function getBuyerEmail(){
+    const email = ($("#buyerEmail")?.value || "").trim().toLowerCase();
+    return email;
+  }
+
   async function payAndGenerateLink(){
     if(!themeId) return;
+
+    const email = getBuyerEmail();
+    if(!email || !email.includes("@")){
+      openModal({
+        title: "⚠️ Falta seu e-mail",
+        hint: "Digite um e-mail válido para conseguirmos recuperar o link depois.",
+        linkText: "",
+        buttons: []
+      });
+      return;
+    }
 
     const t = THEMES[themeId];
     const data = state[themeId] || {};
@@ -519,14 +596,14 @@
       const r = await fetch("/api/publish", {
         method:"POST",
         headers:{ "content-type":"application/json" },
-        body: JSON.stringify({ theme: themeId, html })
+        body: JSON.stringify({ theme: themeId, html, email })
       });
 
       if(!r.ok){
         const details = await readErrorBody(r);
         openModal({
           title: "❌ Erro no servidor (publish)",
-          hint: "Detalhes abaixo (isso é o que sua function respondeu):",
+          hint: "Detalhes abaixo (resposta da API):",
           linkText: details,
           buttons: []
         });
@@ -548,6 +625,9 @@
         return;
       }
 
+      // salva o “pedido” local (ainda não pago)
+      saveLastLink({ stage:"created", id, theme: themeId, email, checkoutUrl, ts: Date.now() });
+
       openModal({
         title: "💳 Pague no Pix para liberar o link",
         hint: "Abra o pagamento, conclua no Pix e depois clique em “Já paguei”.",
@@ -563,16 +643,21 @@
               openModal({ title:"⏳ Verificando pagamento…", hint:"Pode levar alguns segundos.", linkText:"", buttons: [] });
               const finalUrl = await checkPaidLoop(id);
               if(finalUrl){
+                saveLastLink({ stage:"paid", id, theme: themeId, email, url: finalUrl, ts: Date.now() });
+
                 openModal({
                   title: "✅ Link gerado",
-                  hint: "Copie e mande no WhatsApp/Instagram.",
+                  hint: "Copie e mande no WhatsApp/Instagram. Também ficou salvo neste aparelho e pode ser recuperado por e-mail em /recover.",
                   linkText: finalUrl,
                   buttons: [
                     { label:"📋 Copiar", onClick: async ()=>{ try{ await navigator.clipboard.writeText(finalUrl);}catch(e){} alert("Copiado ✅"); } },
                     { type:"a", label:"🔗 Abrir", href:finalUrl },
-                    { type:"a", label:"💬 WhatsApp", href:"https://wa.me/?text="+encodeURIComponent(finalUrl) }
+                    { type:"a", label:"💬 WhatsApp", href:"https://wa.me/?text="+encodeURIComponent(finalUrl) },
+                    { type:"a", label:"🔑 Recuperar depois", href:"/recover.html?email="+encodeURIComponent(email) }
                   ]
                 });
+
+                renderLocalHistory();
               } else {
                 openModal({
                   title: "⚠️ Ainda não confirmou",
@@ -733,8 +818,52 @@ ${body}
     `);
   }
 
+  async function autoCheckIfReturnedFromPayment(){
+    const sp = new URLSearchParams(location.search);
+    const paid = sp.get("paid");
+    const id = sp.get("id");
+    if(paid !== "1" || !id) return;
+
+    openModal({
+      title:"⏳ Confirmando pagamento…",
+      hint:"Aguarde — estamos checando seu link.",
+      linkText:"",
+      buttons:[]
+    });
+
+    const finalUrl = await checkPaidLoop(id);
+    if(finalUrl){
+      const email = getBuyerEmail();
+      saveLastLink({ stage:"paid", id, theme: themeId || "", email: email || "", url: finalUrl, ts: Date.now() });
+
+      openModal({
+        title:"✅ Link recuperado",
+        hint:"Pagamento confirmado. Copie o link:",
+        linkText: finalUrl,
+        buttons:[
+          { label:"📋 Copiar", onClick: async ()=>{ try{ await navigator.clipboard.writeText(finalUrl);}catch(e){} alert("Copiado ✅"); } },
+          { type:"a", label:"🔗 Abrir", href: finalUrl }
+        ]
+      });
+
+      // limpa a query pra não ficar rechecando em refresh
+      try{
+        history.replaceState({}, "", location.pathname);
+      }catch(e){}
+    } else {
+      openModal({
+        title:"⚠️ Ainda não confirmado",
+        hint:"Se você acabou de pagar, pode levar alguns segundos. Volte e clique em “Já paguei” ou tente de novo em instantes.",
+        linkText:"",
+        buttons:[]
+      });
+    }
+  }
+
   renderThemes();
   updatePreview();
+  renderLocalHistory();
+  autoCheckIfReturnedFromPayment();
 </script>
 </body>
 </html>
