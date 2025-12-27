@@ -187,9 +187,6 @@
       .preview{height: 70vh;}
     }
   </style>
-
-  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
 </head>
 
 <body>
@@ -204,10 +201,8 @@
 
     <div class="bar">
       <span class="pill" id="localCountPill" title="Quantidade de links salvos neste aparelho">🕘 0 salvos</span>
-
       <button class="btn" id="btnMyLinks">🕘 Meus links</button>
       <button class="btn" id="btnPay" disabled>💳 Pagar R$ 4,90 e gerar link</button>
-      <button class="btn" id="btnExport" disabled>⬇️ Exportar ZIP</button>
     </div>
   </header>
 
@@ -290,7 +285,6 @@
   }
   function saveLocalCartinhas(arr){
     try{
-      // limita pra não crescer infinito
       localStorage.setItem(STORAGE_KEY, JSON.stringify(arr.slice(0, 50)));
     }catch(e){}
   }
@@ -349,11 +343,8 @@
   }
 
   function formatDateBR(iso){
-    try{
-      return new Date(iso).toLocaleString("pt-BR");
-    }catch(e){
-      return iso || "";
-    }
+    try{ return new Date(iso).toLocaleString("pt-BR"); }
+    catch(e){ return iso || ""; }
   }
 
   function escHtml(s){
@@ -363,9 +354,6 @@
   }
   function escAttr(s){
     return String(s ?? "").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-  }
-  function safeName(name){
-    return String(name || "imagem.jpg").replace(/[^\w.\-]+/g, "_");
   }
   function readFileAsDataURL(file){
     return new Promise((resolve, reject)=>{
@@ -418,7 +406,6 @@
 
   function openModal({ title, hint, linkText, buttons }){
     $("#modalTitle").textContent = title || "✅";
-    // OBS: modalHint pode virar HTML em alguns casos
     $("#modalHint").textContent = hint || "";
     const linkBox = $("#modalLink");
     const btns = $("#modalBtns");
@@ -453,9 +440,7 @@
 
     $("#modalBack").style.display = "grid";
   }
-  function closeModal(){
-    $("#modalBack").style.display = "none";
-  }
+  function closeModal(){ $("#modalBack").style.display = "none"; }
 
   $("#btnCloseModal").addEventListener("click", closeModal);
   $("#modalBack").addEventListener("click", (e)=>{ if(e.target.id==="modalBack") closeModal(); });
@@ -507,7 +492,6 @@
     const j = await res.json().catch(()=> ({}));
     if(res.ok && j && j.url){
       upsertLocalCartinha({ id, finalUrl: j.url, status: "approved" });
-      // salva também como "último" para o box do editor
       saveLastLink({ id, url: j.url, at: Date.now(), stage:"paid" });
       return j.url;
     }
@@ -515,12 +499,7 @@
   }
 
   function openMyLinksModal(){
-    openModal({
-      title: "🕘 Links salvos neste aparelho",
-      hint: "",
-      linkText: "",
-      buttons: []
-    });
+    openModal({ title: "🕘 Links salvos neste aparelho", hint: "", linkText: "", buttons: [] });
 
     const hintEl = $("#modalHint");
     hintEl.innerHTML = makeMyLinksHtml();
@@ -548,11 +527,7 @@
         btn.textContent = "⏳ verificando...";
         try{
           const url = await checkAndUpdateOne(id);
-          if(url){
-            alert("Aprovado ✅ Link atualizado!");
-          }else{
-            alert("Ainda pendente. Tente novamente em alguns segundos.");
-          }
+          alert(url ? "Aprovado ✅ Link atualizado!" : "Ainda pendente. Tente novamente em alguns segundos.");
         }catch(e){
           alert("Erro ao verificar.");
         }finally{
@@ -571,7 +546,7 @@
       emoji: "💌",
       name: "Cartinha de Amor",
       desc: "Carta glass + foto opcional.",
-      hint: "Ideal pra mandar por link (após pagamento Pix) ou exportar ZIP (offline).",
+      hint: "Ideal pra mandar por link (após pagamento Pix).",
       fields: [
         { key:"title", label:"Título", placeholder:"Uma cartinha pra você ❤️" },
         { key:"to", label:"Para", placeholder:"Meu amor" },
@@ -636,7 +611,6 @@
         themeId = id;
         $("#editor").style.display = "block";
         $("#pickTheme").style.display = "none";
-        $("#btnExport").disabled = false;
         $("#btnPay").disabled = false;
         renderThemes();
         renderForm();
@@ -685,29 +659,6 @@
     const html = t.generate(data, assets[themeId], "preview");
     $("#preview").srcdoc = html;
   }
-
-  async function exportZip(){
-    if(!themeId) return;
-
-    const t = THEMES[themeId];
-    const data = state[themeId] || {};
-    const zip = new JSZip();
-
-    const html = t.generate(data, assets[themeId], "export");
-    zip.file("index.html", html);
-
-    const imgFolder = zip.folder("imagens");
-    if(themeId === "amor"){
-      const photo = assets.amor.photo;
-      if(photo){
-        imgFolder.file(safeName(photo.name), photo);
-      }
-    }
-
-    const blob = await zip.generateAsync({type:"blob"});
-    saveAs(blob, `cartinha_${themeId}.zip`);
-  }
-  $("#btnExport").addEventListener("click", exportZip);
 
   async function checkPaidLoop(id){
     const maxTries = 40;
@@ -775,7 +726,6 @@
         return;
       }
 
-      // salva local assim que cria (pendente)
       upsertLocalCartinha({
         id,
         createdAt: new Date().toISOString(),
@@ -906,13 +856,7 @@ ${body}
     const from = data.from || "";
 
     const photo = a.photo;
-    const photoSrc = photo
-      ? (
-          mode === "export"
-            ? `./imagens/${safeName(photo.name)}`
-            : (photo._dataUrl || "")
-        )
-      : "";
+    const photoSrc = photo ? (photo._dataUrl || "") : "";
 
     return baseDoc(title, `
       <div class="card">
