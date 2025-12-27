@@ -1,4 +1,5 @@
-import { createClient } from "@supabase/supabase-js";
+ import { createClient } from "@supabase/supabase-js";
+import { createHash, randomInt } from "node:crypto";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -22,24 +23,17 @@ async function readJsonBody(req) {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
-function normalizeEmail(email) {
-  return String(email || "").trim().toLowerCase();
+function sha256(s) {
+  return createHash("sha256").update(s).digest("hex");
 }
 
-function sha256Hex(str) {
-  // Node 20: usa crypto do node
-  const { createHash } = require("crypto");
-  return createHash("sha256").update(str).digest("hex");
+function getBaseUrl(req) {
+  const proto = (req.headers["x-forwarded-proto"] || "https").toString();
+  const host = (req.headers["x-forwarded-host"] || req.headers.host || "").toString();
+  return `${proto}://${host}`.replace(/\/+$/, "");
 }
 
-function generateCode() {
-  // 6 dígitos
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
-
-async function sendEmailResend({ to, subject, html, text }) {
-  if (!RESEND_API_KEY) throw new Error("RESEND_API_KEY missing");
-
+async function sendEmail(to, subject, html) {
   const r = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -48,16 +42,15 @@ async function sendEmailResend({ to, subject, html, text }) {
     },
     body: JSON.stringify({
       from: MAIL_FROM,
-      to,
+      to: [to],
       subject,
       html,
-      text,
     }),
   });
 
   const j = await r.json().catch(() => ({}));
   if (!r.ok) {
-    throw new Error(`Resend error: ${r.status} ${JSON.stringify(j)}`);
+    throw new Error(`Resend error (${r.status}): ${JSON.stringify(j)}`);
   }
   return j;
 }
@@ -66,65 +59,47 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return json(res, 500, { error: "Supabase env missing" });
-  if (!OTP_SECRET) return json(res, 500, { error: "OTP_SECRET missing" });
+  if (!RESEND_API_KEY || !OTP_SECRET) return json(res, 500, { error: "Resend/OTP env missing" });
 
   const body = await readJsonBody(req);
   if (body === null) return json(res, 400, { error: "Invalid JSON" });
 
-  const email = normalizeEmail(body.email);
-  if (!email.includes("@")) return json(res, 400, { error: "Invalid email" });
+  const email = String(body.email || "").trim().toLowerCase();
+  if (!email || !email.includes("@")) return json(res, 400, { error: "Invalid email" });
+
+  // gera OTP 6 dígitos
+  const code = String(randomInt(0, 1000000)).padStart(6, "0");
+  const code_hash = sha256(`${code}:${OTP_SECRET}`);
+  const expires_at = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 min
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
-  // rate limit simples: 1 envio por minuto por email
-  const now = new Date();
-  const { data: existing } = await supabase.from("cartinhas_otp").select("last_sent_at").eq("email", email).maybeSingle();
-
-  if (existing?.last_sent_at) {
-    const last = new Date(existing.last_sent_at);
-    const diffMs = now - last;
-    if (diffMs < 60_000) {
-      return json(res, 429, { error: "Aguarde 1 minuto antes de pedir outro código." });
-    }
-  }
-
-  const code = generateCode();
-  const expiresAt = new Date(now.getTime() + 10 * 60_000); // 10 min
-
-  const codeHash = sha256Hex(`${OTP_SECRET}:${email}:${code}`);
-
-  const up = await supabase.from("cartinhas_otp").upsert(
-    {
-      email,
-      code_hash: codeHash,
-      expires_at: expiresAt.toISOString(),
-      attempts: 0,
-      last_sent_at: now.toISOString(),
-      updated_at: now.toISOString(),
-    },
-    { onConflict: "email" }
-  );
+  // upsert por email
+  const up = await supabase
+    .from("recover_otps")
+    .upsert({ email, code_hash, expires_at, attempts: 0 }, { onConflict: "email" });
 
   if (up.error) return json(res, 500, { error: up.error.message });
 
-  // envia e-mail
-  try {
-    await sendEmailResend({
-      to: email,
-      subject: "Seu código para recuperar a Cartinha",
-      text: `Seu código é: ${code} (vale por 10 minutos).`,
-      html: `
-        <div style="font-family:Arial,sans-serif;line-height:1.4">
-          <h2>Recuperar sua Cartinha</h2>
-          <p>Seu código é:</p>
-          <div style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</div>
-          <p>Ele expira em <b>10 minutos</b>.</p>
-        </div>
-      `,
-    });
-  } catch (e) {
-    return json(res, 500, { error: "Falha ao enviar e-mail", details: String(e?.message || e) });
-  }
+  const baseUrl = getBaseUrl(req);
+  const recoverUrl = `${baseUrl}/recover.html?email=${encodeURIComponent(email)}`;
 
+  // manda e-mail
+  await sendEmail(
+    email,
+    "Código de recuperação da sua cartinha",
+    `
+      <div style="font-family:Arial,sans-serif;line-height:1.5">
+        <h2>Seu código de recuperação</h2>
+        <p>Use este código (válido por <b>10 minutos</b>):</p>
+        <p style="font-size:24px;letter-spacing:2px"><b>${code}</b></p>
+        <p>Abra a página de recuperação:</p>
+        <p><a href="${recoverUrl}">${recoverUrl}</a></p>
+      </div>
+    `
+  );
+
+  // não revela se existe compra ou não — melhor segurança
   return json(res, 200, { ok: true });
 }
+
