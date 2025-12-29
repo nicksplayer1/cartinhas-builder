@@ -219,11 +219,10 @@
 
         <div id="editor" style="display:none;">
           <div class="hint" id="themeHint" style="margin-bottom:10px;"></div>
-
           <div class="grid" id="form"></div>
 
           <div class="hint" style="margin-top:10px;">
-            No celular: escolha a foto e aguarde carregar. Se não aparecer no preview, troque e tente de novo.
+            No celular: escolha a foto/vídeo e aguarde carregar. Se não aparecer no preview, troque e tente de novo.
           </div>
 
           <div class="mini" id="localHistoryBox" style="display:none;">
@@ -364,6 +363,26 @@
     });
   }
 
+  // =========================
+  // Upload de vídeo para Vercel Blob (via /api/upload)
+  // =========================
+  async function uploadVideoToBlob(file){
+    // Importa o client do Blob no browser (sem bundler)
+    const mod = await import("https://esm.sh/@vercel/blob/client");
+    const upload = mod.upload;
+
+    const ext = (String(file.name || "").split(".").pop() || "mp4").toLowerCase();
+    const path = `cartinhas/videos/${Date.now()}_${Math.random().toString(16).slice(2)}.${ext}`;
+
+    const blob = await upload(path, file, {
+      access: "public",
+      handleUploadUrl: "/api/upload"
+    });
+
+    if(!blob || !blob.url) throw new Error("Upload não retornou URL.");
+    return blob.url;
+  }
+
   function makeField(field, value, onChange){
     const wrap = document.createElement("div");
     const id = "f_" + field.key;
@@ -393,15 +412,22 @@
     el.addEventListener("change", () => onChange(field, el));
     wrap.appendChild(el);
 
-    if(field.help){
+    // Sempre cria um "help" em file (pra mostrar status de upload também)
+    if(field.help || field.type === "file"){
       const h = document.createElement("div");
       h.className = "hint";
       h.style.marginTop = "6px";
-      h.textContent = field.help;
+      h.id = "help_" + field.key; // ex: help_video
+      h.textContent = field.help || "";
       wrap.appendChild(h);
     }
 
     return wrap;
+  }
+
+  function setHelp(key, text){
+    const el = document.getElementById("help_" + key);
+    if(el) el.textContent = text || "";
   }
 
   function openModal({ title, hint, linkText, buttons }){
@@ -541,6 +567,9 @@
 
   $("#btnMyLinks").addEventListener("click", openMyLinksModal);
 
+  // =========================
+  // THEMES (inclui Presente + Vídeo)
+  // =========================
   const THEMES = {
     amor: {
       emoji: "💌",
@@ -556,6 +585,7 @@
       ],
       generate: (data, asset, mode) => genCartinhaGlass(data, asset, mode)
     },
+
     simples: {
       emoji: "✉️",
       name: "Cartinha Simples",
@@ -568,6 +598,19 @@
         { key:"from", label:"Assinatura", placeholder:"Seu nome" }
       ],
       generate: (data) => genCartinhaSimples(data)
+    },
+
+    presenteVideo: {
+      emoji: "🎁",
+      name: "Presente + Vídeo",
+      desc: "Presente no centro → abre e toca vídeo com áudio.",
+      hint: "Escolha um vídeo (até 25MB). Depois, quem receber clica no presente para abrir e tocar.",
+      fields: [
+        { key:"title", label:"Título", placeholder:"Uma surpresa pra você 🎁" },
+        { key:"caption", label:"Legenda (opcional)", placeholder:"Clique no presente..." },
+        { key:"video", label:"Vídeo (até 25MB)", type:"file", accept:"video/*", help:"O vídeo será enviado e ficará público." }
+      ],
+      generate: (data, asset, mode) => genPresenteVideo(data, asset, mode)
     }
   };
 
@@ -585,13 +628,34 @@
       to: "Você",
       message: "Escreva aqui sua mensagem...",
       from: "— Seu nome"
+    },
+    presenteVideo: {
+      title: "Uma surpresa pra você 🎁",
+      caption: "Clique no presente para abrir"
     }
   };
 
   const assets = {
     amor: { photo: null },
-    simples: {}
+    simples: {},
+    presenteVideo: { videoFile: null, videoUrl: "" }
   };
+
+  function refreshPayButtonState(){
+    const pay = $("#btnPay");
+    if(!themeId){
+      pay.disabled = true;
+      return;
+    }
+
+    // Para Presente+Vídeo: só libera pagar quando tiver URL do vídeo
+    if(themeId === "presenteVideo"){
+      pay.disabled = !assets.presenteVideo.videoUrl;
+      return;
+    }
+
+    pay.disabled = false;
+  }
 
   function renderThemes(){
     const root = $("#themes");
@@ -611,11 +675,12 @@
         themeId = id;
         $("#editor").style.display = "block";
         $("#pickTheme").style.display = "none";
-        $("#btnPay").disabled = false;
+
         renderThemes();
         renderForm();
         updatePreview();
         renderLocalHistory();
+        refreshPayButtonState();
       });
       root.appendChild(el);
     });
@@ -633,20 +698,84 @@
       const el = makeField(field, data[field.key], async (field, inputEl)=>{
         if(field.type === "file"){
           const f = inputEl.files && inputEl.files[0] ? inputEl.files[0] : null;
+
+          // FOTO (tema amor)
           if(themeId === "amor" && field.key === "photo"){
             assets.amor.photo = f;
             if(assets.amor.photo){
               assets.amor.photo._dataUrl = await readFileAsDataURL(assets.amor.photo);
             }
+            updatePreview();
+            refreshPayButtonState();
+            return;
           }
-        } else {
-          data[field.key] = inputEl.value;
+
+          // VÍDEO (tema presenteVideo) -> sobe pro Blob e salva URL
+          if(themeId === "presenteVideo" && field.key === "video"){
+            if(!f){
+              assets.presenteVideo.videoFile = null;
+              assets.presenteVideo.videoUrl = "";
+              setHelp("video", "O vídeo será enviado e ficará público.");
+              updatePreview();
+              refreshPayButtonState();
+              return;
+            }
+
+            const MAX = 25 * 1024 * 1024; // 25MB
+            if(f.size > MAX){
+              assets.presenteVideo.videoFile = null;
+              assets.presenteVideo.videoUrl = "";
+              inputEl.value = "";
+              setHelp("video", "❌ Vídeo muito grande. Limite: 25MB.");
+              alert("Vídeo muito grande. Limite: 25MB.");
+              updatePreview();
+              refreshPayButtonState();
+              return;
+            }
+
+            setHelp("video", "⏳ Enviando vídeo… (não feche a página)");
+
+            try{
+              const url = await uploadVideoToBlob(f);
+              assets.presenteVideo.videoFile = f;
+              assets.presenteVideo.videoUrl = url;
+              setHelp("video", "✅ Vídeo enviado! Agora o presente vai abrir o vídeo.");
+            }catch(err){
+              console.error("Falha no upload do vídeo:", err);
+              assets.presenteVideo.videoFile = null;
+              assets.presenteVideo.videoUrl = "";
+              inputEl.value = "";
+              setHelp("video", "❌ Falha no upload. Abra o console (F12) para ver o erro.");
+              alert("Falha no upload do vídeo. Abra o console (F12) para ver o erro.");
+            }
+
+            updatePreview();
+            refreshPayButtonState();
+            return;
+          }
+
+          // Qualquer outro file (se tiver no futuro)
+          updatePreview();
+          refreshPayButtonState();
+          return;
         }
+
+        // Campos de texto
+        data[field.key] = inputEl.value;
         updatePreview();
+        refreshPayButtonState();
       });
 
       form.appendChild(el);
     });
+
+    // Atualiza ajuda inicial quando entra no tema presenteVideo
+    if(themeId === "presenteVideo"){
+      setHelp("video", assets.presenteVideo.videoUrl
+        ? "✅ Vídeo já enviado (salvo nesta sessão)."
+        : "O vídeo será enviado e ficará público."
+      );
+    }
   }
 
   function updatePreview(){
@@ -685,6 +814,12 @@
 
   async function payAndGenerateLink(){
     if(!themeId) return;
+
+    // trava se for presenteVideo e não tiver vídeo
+    if(themeId === "presenteVideo" && !assets.presenteVideo.videoUrl){
+      alert("Selecione e envie um vídeo (até 25MB) antes de gerar o link.");
+      return;
+    }
 
     const t = THEMES[themeId];
     const data = state[themeId] || {};
@@ -792,14 +927,17 @@
         buttons: []
       });
     }finally{
-      btn.disabled = false;
       btn.textContent = "💳 Pagar " + PRICE_LABEL + " e gerar link";
+      refreshPayButtonState();
     }
   }
 
   $("#btnPay").addEventListener("click", payAndGenerateLink);
   $("#btnPay").textContent = "💳 Pagar " + PRICE_LABEL + " e gerar link";
 
+  // =========================
+  // Geração das cartinhas
+  // =========================
   function baseDoc(title, body){
     return `<!doctype html>
 <html lang="pt-br">
@@ -849,7 +987,7 @@ ${body}
 </html>`;
   }
 
-  function genCartinhaGlass(data, a, mode){
+  function genCartinhaGlass(data, a){
     const title = data.title || "Uma cartinha pra você ❤️";
     const to = data.to || "";
     const msg = data.message || "";
@@ -907,6 +1045,157 @@ ${body}
               ${escHtml(from)}
             </div>
           ` : ""}
+        </div>
+      </div>
+    `);
+  }
+
+  function genPresenteVideo(data, a){
+    const title = data.title || "Uma surpresa pra você 🎁";
+    const caption = data.caption || "";
+    const videoUrl = (a && a.videoUrl) ? a.videoUrl : "";
+    const needsVideo = !videoUrl;
+
+    return baseDoc(title, `
+      <div class="card">
+        <div class="h">
+          <div class="h1">${escHtml(title)}</div>
+          <div class="muted" style="margin-top:6px;">
+            ${needsVideo ? "⚠️ Vídeo ainda não foi enviado." : "🎁 Clique no presente para abrir e tocar o vídeo."}
+          </div>
+        </div>
+
+        <div class="b">
+          <div style="
+            height: 70vh;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            position:relative;
+            border-radius: 22px;
+            border:1px solid rgba(255,255,255,.12);
+            background: rgba(0,0,0,.14);
+            overflow:hidden;
+          ">
+            ${caption ? `
+              <div style="
+                position:absolute;
+                top:16px;
+                left:16px;
+                right:16px;
+                text-align:center;
+                font-size:16px;
+                color: rgba(255,255,255,.92);
+                text-shadow: 0 10px 25px rgba(0,0,0,.45);
+              ">${escHtml(caption)}</div>
+            ` : ""}
+
+            <button id="giftBtn" ${needsVideo ? "disabled" : ""} style="
+              width:180px; height:180px;
+              border-radius: 26px;
+              border: 1px solid rgba(255,255,255,.18);
+              background: rgba(255,255,255,.08);
+              cursor: ${needsVideo ? "not-allowed" : "pointer"};
+              box-shadow: 0 18px 60px rgba(0,0,0,.45);
+              display:grid; place-items:center;
+              font-size:72px;
+              transition: transform .15s ease;
+            ">🎁</button>
+
+            <div id="boom" style="
+              position:absolute; inset:0;
+              display:none;
+              place-items:center;
+              pointer-events:none;
+            ">
+              <div style="
+                width:12px; height:12px;
+                border-radius:999px;
+                box-shadow:
+                  0 0 0 0 rgba(255,255,255,.85),
+                  0 0 0 0 rgba(255,255,255,.55);
+                animation: pop .8s ease forwards;
+              "></div>
+            </div>
+
+            <div id="fs" style="
+              position:fixed; inset:0;
+              background:#000;
+              display:none;
+              align-items:center;
+              justify-content:center;
+              z-index:999999;
+            ">
+              <video id="v" src="${escAttr(videoUrl)}" playsinline controls style="width:100%; height:100%; object-fit:contain;"></video>
+              <button id="close" style="
+                position:fixed; top:14px; right:14px;
+                border-radius: 14px;
+                border:1px solid rgba(255,255,255,.22);
+                background: rgba(255,255,255,.12);
+                color:#fff;
+                padding:10px 12px;
+                cursor:pointer;
+                font-size:14px;
+              ">✖️ Fechar</button>
+            </div>
+
+            <style>
+              @keyframes pop{
+                0%{ transform: scale(1); opacity:1; box-shadow: 0 0 0 0 rgba(255,255,255,.85), 0 0 0 0 rgba(255,255,255,.55); }
+                100%{ transform: scale(1); opacity:0; box-shadow: 0 0 0 380px rgba(255,255,255,0), 0 0 0 680px rgba(255,255,255,0); }
+              }
+            </style>
+
+            <script>
+              (function(){
+                const disabled = ${needsVideo ? "true" : "false"};
+                if(disabled) return;
+
+                const btn = document.getElementById("giftBtn");
+                const boom = document.getElementById("boom");
+                const fs = document.getElementById("fs");
+                const v = document.getElementById("v");
+                const close = document.getElementById("close");
+
+                async function openVideo(){
+                  boom.style.display = "grid";
+                  btn.style.transform = "scale(0.92)";
+
+                  setTimeout(async ()=>{
+                    fs.style.display = "flex";
+
+                    // tenta fullscreen (pode falhar no preview por causa do iframe sandbox)
+                    try{
+                      if(fs.requestFullscreen) await fs.requestFullscreen();
+                    }catch(e){}
+
+                    // tenta tocar com áudio (permitido porque veio do clique)
+                    try{
+                      v.muted = false;
+                      v.volume = 1;
+                      await v.play();
+                    }catch(e){
+                      // se bloquear, o usuário dá play no controls
+                    }
+                  }, 450);
+                }
+
+                function closeVideo(){
+                  try{ v.pause(); }catch(e){}
+                  fs.style.display = "none";
+                  boom.style.display = "none";
+                  btn.style.transform = "scale(1)";
+                  try{
+                    if(document.fullscreenElement) document.exitFullscreen();
+                  }catch(e){}
+                }
+
+                btn.addEventListener("click", openVideo);
+                close.addEventListener("click", closeVideo);
+                fs.addEventListener("click", (e)=>{ if(e.target === fs) closeVideo(); });
+              })();
+            <\/script>
+          </div>
         </div>
       </div>
     `);
@@ -970,6 +1259,7 @@ ${body}
   updatePreview();
   renderLocalHistory();
   updateLocalPill();
+  refreshPayButtonState();
   autoCheckIfReturnedFromPayment();
 </script>
 </body>
