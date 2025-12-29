@@ -1,3 +1,3 @@
 module.exports = (req, res) => {
-  res.status(200).json({ ok: true, where: "api/ping.js" });
+  res.status(200).send("pong");
 };
