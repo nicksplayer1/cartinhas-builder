@@ -244,7 +244,13 @@
         <div class="hint">Atualiza automaticamente</div>
       </div>
       <div class="card-b">
-        <iframe class="preview" id="preview" sandbox="allow-same-origin allow-scripts"></iframe>
+        <iframe
+          class="preview"
+          id="preview"
+          sandbox="allow-same-origin allow-scripts"
+          allow="autoplay; fullscreen"
+          allowfullscreen
+        ></iframe>
       </div>
     </div>
   </div>
@@ -366,9 +372,17 @@
   // =========================
   // Upload de vídeo para Vercel Blob (via /api/upload)
   // =========================
-  async function uploadVideoToBlob(file){
-    // Importa o client do Blob no browser (sem bundler)
-    const mod = await import("https://esm.sh/@vercel/blob/client");
+  let _blobClientPromise = null;
+
+  async function getBlobClient(){
+    if(!_blobClientPromise){
+      _blobClientPromise = import("https://esm.sh/@vercel/blob/client");
+    }
+    return _blobClientPromise;
+  }
+
+  async function uploadVideoToBlob(file, onProgress){
+    const mod = await getBlobClient();
     const upload = mod.upload;
 
     const ext = (String(file.name || "").split(".").pop() || "mp4").toLowerCase();
@@ -376,7 +390,13 @@
 
     const blob = await upload(path, file, {
       access: "public",
-      handleUploadUrl: "/api/upload"
+      handleUploadUrl: "/api/upload",
+      contentType: file.type || undefined,
+      onUploadProgress: (ev) => {
+        if(!onProgress) return;
+        // ev: { loaded, total, percentage }
+        if(typeof ev?.percentage === "number") onProgress(ev.percentage);
+      }
     });
 
     if(!blob || !blob.url) throw new Error("Upload não retornou URL.");
@@ -412,12 +432,11 @@
     el.addEventListener("change", () => onChange(field, el));
     wrap.appendChild(el);
 
-    // Sempre cria um "help" em file (pra mostrar status de upload também)
     if(field.help || field.type === "file"){
       const h = document.createElement("div");
       h.className = "hint";
       h.style.marginTop = "6px";
-      h.id = "help_" + field.key; // ex: help_video
+      h.id = "help_" + field.key;
       h.textContent = field.help || "";
       wrap.appendChild(h);
     }
@@ -568,7 +587,7 @@
   $("#btnMyLinks").addEventListener("click", openMyLinksModal);
 
   // =========================
-  // THEMES (inclui Presente + Vídeo)
+  // THEMES (inclui Presente + Vídeo Glass)
   // =========================
   const THEMES = {
     amor: {
@@ -583,7 +602,7 @@
         { key:"from", label:"Assinatura", placeholder:"Seu nome" },
         { key:"photo", label:"Foto (opcional)", type:"file", accept:"image/*", help:"Aparece no topo da cartinha." }
       ],
-      generate: (data, asset, mode) => genCartinhaGlass(data, asset, mode)
+      generate: (data, asset) => genCartinhaGlass(data, asset)
     },
 
     simples: {
@@ -602,15 +621,15 @@
 
     presenteVideo: {
       emoji: "🎁",
-      name: "Presente + Vídeo",
+      name: "Presente + Vídeo (Glass)",
       desc: "Presente no centro → abre e toca vídeo com áudio.",
-      hint: "Escolha um vídeo (até 25MB). Depois, quem receber clica no presente para abrir e tocar.",
+      hint: "Escolha um vídeo (até 25MB). Ele será enviado pro Blob e ficará público.",
       fields: [
-        { key:"title", label:"Título", placeholder:"Uma surpresa pra você 🎁" },
-        { key:"caption", label:"Legenda (opcional)", placeholder:"Clique no presente..." },
-        { key:"video", label:"Vídeo (até 25MB)", type:"file", accept:"video/*", help:"O vídeo será enviado e ficará público." }
+        { key:"title", label:"Título", placeholder:"Hoje é dia de comemorar! 🎉" },
+        { key:"caption", label:"Legenda (opcional)", placeholder:"Toque no presente pra abrir a surpresa" },
+        { key:"video", label:"Vídeo (até 25MB)", type:"file", accept:"video/*", help:"Selecione um vídeo para enviar." }
       ],
-      generate: (data, asset, mode) => genPresenteVideo(data, asset, mode)
+      generate: (data, asset) => genPresenteVideoGlass(data, asset)
     }
   };
 
@@ -630,8 +649,8 @@
       from: "— Seu nome"
     },
     presenteVideo: {
-      title: "Uma surpresa pra você 🎁",
-      caption: "Clique no presente para abrir"
+      title: "Hoje é dia de comemorar! 🎉",
+      caption: "Toque no presente pra abrir a surpresa"
     }
   };
 
@@ -647,13 +666,10 @@
       pay.disabled = true;
       return;
     }
-
-    // Para Presente+Vídeo: só libera pagar quando tiver URL do vídeo
     if(themeId === "presenteVideo"){
       pay.disabled = !assets.presenteVideo.videoUrl;
       return;
     }
-
     pay.disabled = false;
   }
 
@@ -715,13 +731,13 @@
             if(!f){
               assets.presenteVideo.videoFile = null;
               assets.presenteVideo.videoUrl = "";
-              setHelp("video", "O vídeo será enviado e ficará público.");
+              setHelp("video", "Selecione um vídeo para enviar.");
               updatePreview();
               refreshPayButtonState();
               return;
             }
 
-            const MAX = 25 * 1024 * 1024; // 25MB
+            const MAX = 25 * 1024 * 1024;
             if(f.size > MAX){
               assets.presenteVideo.videoFile = null;
               assets.presenteVideo.videoUrl = "";
@@ -733,20 +749,19 @@
               return;
             }
 
-            setHelp("video", "⏳ Enviando vídeo… (não feche a página)");
-
+            setHelp("video", "⏳ Enviando vídeo… 0%");
             try{
-              const url = await uploadVideoToBlob(f);
+              const url = await uploadVideoToBlob(f, (pct)=> setHelp("video", `⏳ Enviando vídeo… ${Math.round(pct)}%`));
               assets.presenteVideo.videoFile = f;
               assets.presenteVideo.videoUrl = url;
-              setHelp("video", "✅ Vídeo enviado! Agora o presente vai abrir o vídeo.");
+              setHelp("video", "✅ Vídeo enviado! (pronto pra gerar o link)");
             }catch(err){
               console.error("Falha no upload do vídeo:", err);
               assets.presenteVideo.videoFile = null;
               assets.presenteVideo.videoUrl = "";
               inputEl.value = "";
-              setHelp("video", "❌ Falha no upload. Abra o console (F12) para ver o erro.");
-              alert("Falha no upload do vídeo. Abra o console (F12) para ver o erro.");
+              setHelp("video", "❌ Falha no upload. Veja o console (F12) para detalhes.");
+              alert("Falha no upload do vídeo. Veja o console (F12) para detalhes.");
             }
 
             updatePreview();
@@ -754,7 +769,6 @@
             return;
           }
 
-          // Qualquer outro file (se tiver no futuro)
           updatePreview();
           refreshPayButtonState();
           return;
@@ -769,11 +783,10 @@
       form.appendChild(el);
     });
 
-    // Atualiza ajuda inicial quando entra no tema presenteVideo
     if(themeId === "presenteVideo"){
       setHelp("video", assets.presenteVideo.videoUrl
-        ? "✅ Vídeo já enviado (salvo nesta sessão)."
-        : "O vídeo será enviado e ficará público."
+        ? "✅ Vídeo já enviado (nesta sessão)."
+        : "Selecione um vídeo para enviar."
       );
     }
   }
@@ -815,7 +828,6 @@
   async function payAndGenerateLink(){
     if(!themeId) return;
 
-    // trava se for presenteVideo e não tiver vídeo
     if(themeId === "presenteVideo" && !assets.presenteVideo.videoUrl){
       alert("Selecione e envie um vídeo (até 25MB) antes de gerar o link.");
       return;
@@ -1050,155 +1062,528 @@ ${body}
     `);
   }
 
-  function genPresenteVideo(data, a){
-    const title = data.title || "Uma surpresa pra você 🎁";
-    const caption = data.caption || "";
-    const videoUrl = (a && a.videoUrl) ? a.videoUrl : "";
-    const needsVideo = !videoUrl;
+  // ✅ Tema novo (o bonito): Presente Glass + vídeo (usa a.videoUrl)
+  function genPresenteVideoGlass(data, a){
+    const title = (data.title || "Hoje é dia de comemorar! 🎉").trim();
+    const caption = (data.caption || "").trim();
+    const videoUrl = (a && a.videoUrl) ? String(a.videoUrl) : "";
+    const hasVideo = !!videoUrl;
 
-    return baseDoc(title, `
-      <div class="card">
-        <div class="h">
-          <div class="h1">${escHtml(title)}</div>
-          <div class="muted" style="margin-top:6px;">
-            ${needsVideo ? "⚠️ Vídeo ainda não foi enviado." : "🎁 Clique no presente para abrir e tocar o vídeo."}
-          </div>
-        </div>
+    const safeTitle = escHtml(title);
+    const safeCaption = escHtml(caption);
+    const safeVideoUrl = escAttr(videoUrl);
 
-        <div class="b">
-          <div style="
-            height: 70vh;
-            display:flex;
-            align-items:center;
-            justify-content:center;
-            position:relative;
-            border-radius: 22px;
-            border:1px solid rgba(255,255,255,.12);
-            background: rgba(0,0,0,.14);
-            overflow:hidden;
-          ">
-            ${caption ? `
-              <div style="
-                position:absolute;
-                top:16px;
-                left:16px;
-                right:16px;
-                text-align:center;
-                font-size:16px;
-                color: rgba(255,255,255,.92);
-                text-shadow: 0 10px 25px rgba(0,0,0,.45);
-              ">${escHtml(caption)}</div>
-            ` : ""}
+    return `<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>🎁 ${safeTitle}</title>
+  <style>
+    :root{
+      --bg1:#050812;
+      --bg2:#0b1230;
+      --txt: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.72);
+      --stroke: rgba(255,255,255,.14);
+      --shadow: 0 24px 80px rgba(0,0,0,.55);
+      --r: 22px;
+      --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family:var(--font);
+      color:var(--txt);
+      overflow:hidden;
+      background:
+        radial-gradient(900px 700px at 20% 18%, rgba(120,80,255,.30) 0%, transparent 60%),
+        radial-gradient(900px 700px at 82% 22%, rgba(255,90,190,.24) 0%, transparent 62%),
+        radial-gradient(1100px 900px at 50% 110%, rgba(70,210,255,.15) 0%, transparent 60%),
+        linear-gradient(135deg, var(--bg1), var(--bg2));
+    }
 
-            <button id="giftBtn" ${needsVideo ? "disabled" : ""} style="
-              width:180px; height:180px;
-              border-radius: 26px;
-              border: 1px solid rgba(255,255,255,.18);
-              background: rgba(255,255,255,.08);
-              cursor: ${needsVideo ? "not-allowed" : "pointer"};
-              box-shadow: 0 18px 60px rgba(0,0,0,.45);
-              display:grid; place-items:center;
-              font-size:72px;
-              transition: transform .15s ease;
-            ">🎁</button>
+    .stars{
+      position:fixed; inset:-30%;
+      background-image:
+        radial-gradient(2px 2px at 20px 30px, rgba(255,255,255,.45) 40%, transparent 45%),
+        radial-gradient(1px 1px at 90px 120px, rgba(255,255,255,.30) 40%, transparent 45%),
+        radial-gradient(2px 2px at 210px 80px, rgba(255,255,255,.22) 40%, transparent 45%),
+        radial-gradient(1px 1px at 320px 210px, rgba(255,255,255,.18) 40%, transparent 45%),
+        radial-gradient(2px 2px at 430px 140px, rgba(255,255,255,.22) 40%, transparent 45%),
+        radial-gradient(1px 1px at 520px 260px, rgba(255,255,255,.18) 40%, transparent 45%);
+      background-size: 560px 320px;
+      opacity:.55;
+      animation: drift 18s linear infinite;
+      pointer-events:none;
+      filter: blur(.2px);
+    }
+    @keyframes drift{
+      from{transform: translate3d(0,0,0)}
+      to{transform: translate3d(-120px, 80px, 0)}
+    }
 
-            <div id="boom" style="
-              position:absolute; inset:0;
-              display:none;
-              place-items:center;
-              pointer-events:none;
-            ">
-              <div style="
-                width:12px; height:12px;
-                border-radius:999px;
-                box-shadow:
-                  0 0 0 0 rgba(255,255,255,.85),
-                  0 0 0 0 rgba(255,255,255,.55);
-                animation: pop .8s ease forwards;
-              "></div>
-            </div>
+    .stage{
+      position:fixed;
+      inset:0;
+      display:grid;
+      place-items:center;
+      padding:24px;
+    }
 
-            <div id="fs" style="
-              position:fixed; inset:0;
-              background:#000;
-              display:none;
-              align-items:center;
-              justify-content:center;
-              z-index:999999;
-            ">
-              <video id="v" src="${escAttr(videoUrl)}" playsinline controls style="width:100%; height:100%; object-fit:contain;"></video>
-              <button id="close" style="
-                position:fixed; top:14px; right:14px;
-                border-radius: 14px;
-                border:1px solid rgba(255,255,255,.22);
-                background: rgba(255,255,255,.12);
-                color:#fff;
-                padding:10px 12px;
-                cursor:pointer;
-                font-size:14px;
-              ">✖️ Fechar</button>
-            </div>
+    .headline{
+      position:absolute;
+      top:18px;
+      left:0; right:0;
+      text-align:center;
+      pointer-events:none;
+      padding: 0 14px;
+    }
+    .headline h1{
+      margin:0;
+      font-size: clamp(18px, 3vw, 30px);
+      font-weight:900;
+      letter-spacing:.2px;
+      text-shadow: 0 18px 60px rgba(0,0,0,.60);
+    }
+    .headline p{
+      margin:8px 0 0;
+      font-size: clamp(12px, 2vw, 14px);
+      color: rgba(255,255,255,.82);
+      text-shadow: 0 14px 50px rgba(0,0,0,.55);
+      opacity:.95;
+      display:${caption ? "block" : "none"};
+    }
 
-            <style>
-              @keyframes pop{
-                0%{ transform: scale(1); opacity:1; box-shadow: 0 0 0 0 rgba(255,255,255,.85), 0 0 0 0 rgba(255,255,255,.55); }
-                100%{ transform: scale(1); opacity:0; box-shadow: 0 0 0 380px rgba(255,255,255,0), 0 0 0 680px rgba(255,255,255,0); }
-              }
-            </style>
+    .giftWrap{
+      position:relative;
+      display:grid;
+      place-items:center;
+      gap:12px;
+      cursor:${hasVideo ? "pointer" : "not-allowed"};
+      user-select:none;
+      transform: translateY(14px);
+    }
 
-            <script>
-              (function(){
-                const disabled = ${needsVideo ? "true" : "false"};
-                if(disabled) return;
+    .tap{
+      font-size:13px;
+      color: rgba(255,255,255,.86);
+      padding:10px 14px;
+      border-radius: 999px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.18);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 20px 60px rgba(0,0,0,.45);
+      max-width:min(520px, 90vw);
+      text-align:center;
+      opacity:${hasVideo ? "1" : ".75"};
+    }
 
-                const btn = document.getElementById("giftBtn");
-                const boom = document.getElementById("boom");
-                const fs = document.getElementById("fs");
-                const v = document.getElementById("v");
-                const close = document.getElementById("close");
+    .gift3d{
+      width: 240px;
+      height: 240px;
+      position:relative;
+      transform-style: preserve-3d;
+      filter: drop-shadow(0 28px 70px rgba(0,0,0,.55));
+      animation: float 3.2s ease-in-out infinite;
+      opacity:${hasVideo ? "1" : ".7"};
+    }
+    @keyframes float{
+      0%,100%{transform: translateY(0) rotateX(12deg) rotateY(-12deg)}
+      50%{transform: translateY(-10px) rotateX(14deg) rotateY(-8deg)}
+    }
 
-                async function openVideo(){
-                  boom.style.display = "grid";
-                  btn.style.transform = "scale(0.92)";
+    .box{
+      position:absolute;
+      inset: 24px;
+      border-radius: 28px;
+      border: 1px solid rgba(255,255,255,.22);
+      background:
+        linear-gradient(135deg, rgba(255,255,255,.14), rgba(255,255,255,.04));
+      backdrop-filter: blur(12px);
+      overflow:hidden;
+    }
+    .box:before{
+      content:"";
+      position:absolute;
+      inset:-40%;
+      background: radial-gradient(circle at 30% 20%, rgba(255,255,255,.55), transparent 48%);
+      transform: rotate(15deg);
+      opacity:.35;
+    }
+    .box:after{
+      content:"";
+      position:absolute;
+      inset:0;
+      background:
+        radial-gradient(140px 120px at 70% 30%, rgba(255,90,190,.22), transparent 60%),
+        radial-gradient(160px 140px at 25% 80%, rgba(70,210,255,.18), transparent 60%);
+      opacity:.9;
+      mix-blend-mode: screen;
+    }
 
-                  setTimeout(async ()=>{
-                    fs.style.display = "flex";
+    .lid{
+      position:absolute;
+      left: 18px; right:18px;
+      top: 10px;
+      height: 74px;
+      border-radius: 26px;
+      border: 1px solid rgba(255,255,255,.22);
+      background:
+        linear-gradient(135deg, rgba(255,255,255,.16), rgba(255,255,255,.06));
+      backdrop-filter: blur(12px);
+      transform-origin: 50% 100%;
+      box-shadow: 0 18px 45px rgba(0,0,0,.35);
+      overflow:hidden;
+    }
+    .lid:before{
+      content:"";
+      position:absolute;
+      inset:-60%;
+      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.70), transparent 55%);
+      transform: rotate(18deg);
+      opacity:.35;
+    }
 
-                    // tenta fullscreen (pode falhar no preview por causa do iframe sandbox)
-                    try{
-                      if(fs.requestFullscreen) await fs.requestFullscreen();
-                    }catch(e){}
+    .ribbonV, .ribbonH{ position:absolute; inset:0; pointer-events:none; }
+    .ribbonV:before{
+      content:"";
+      position:absolute;
+      top: 12px; bottom: 18px;
+      left: 50%;
+      width: 18px;
+      transform: translateX(-50%);
+      border-radius: 999px;
+      background: linear-gradient(180deg, rgba(255,90,190,.95), rgba(70,210,255,.85));
+      filter: drop-shadow(0 0 18px rgba(255,90,190,.35));
+      opacity:.9;
+    }
+    .ribbonH:before{
+      content:"";
+      position:absolute;
+      left: 28px; right: 28px;
+      top: 50%;
+      height: 18px;
+      transform: translateY(-50%);
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(70,210,255,.90), rgba(255,90,190,.90));
+      filter: drop-shadow(0 0 18px rgba(70,210,255,.30));
+      opacity:.9;
+    }
 
-                    // tenta tocar com áudio (permitido porque veio do clique)
-                    try{
-                      v.muted = false;
-                      v.volume = 1;
-                      await v.play();
-                    }catch(e){
-                      // se bloquear, o usuário dá play no controls
-                    }
-                  }, 450);
-                }
+    .bow{
+      position:absolute;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 86px;
+      height: 56px;
+      pointer-events:none;
+      filter: drop-shadow(0 18px 30px rgba(0,0,0,.35));
+    }
+    .bow:before, .bow:after{
+      content:"";
+      position:absolute;
+      top: 12px;
+      width: 38px;
+      height: 30px;
+      border-radius: 18px 18px 18px 6px;
+      background: linear-gradient(135deg, rgba(255,90,190,.95), rgba(70,210,255,.85));
+      opacity:.92;
+    }
+    .bow:before{left:0; transform: rotate(-18deg)}
+    .bow:after{right:0; transform: rotate(18deg); border-radius: 18px 18px 6px 18px;}
+    .knot{
+      position:absolute;
+      top: 22px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 18px;
+      height: 18px;
+      border-radius: 8px;
+      background: rgba(255,255,255,.82);
+      opacity:.35;
+    }
 
-                function closeVideo(){
-                  try{ v.pause(); }catch(e){}
-                  fs.style.display = "none";
-                  boom.style.display = "none";
-                  btn.style.transform = "scale(1)";
-                  try{
-                    if(document.fullscreenElement) document.exitFullscreen();
-                  }catch(e){}
-                }
+    .glow{
+      position:absolute;
+      inset:-40%;
+      background: radial-gradient(circle at 50% 55%, rgba(255,255,255,.20), transparent 55%);
+      opacity:.9;
+      pointer-events:none;
+    }
 
-                btn.addEventListener("click", openVideo);
-                close.addEventListener("click", closeVideo);
-                fs.addEventListener("click", (e)=>{ if(e.target === fs) closeVideo(); });
-              })();
-            <\/script>
-          </div>
+    canvas#fx{
+      position:absolute;
+      inset:-80px;
+      width: calc(100% + 160px);
+      height: calc(100% + 160px);
+      pointer-events:none;
+    }
+
+    .opening .lid{ animation: lidPop .65s cubic-bezier(.2,.9,.1,1) forwards; }
+    @keyframes lidPop{
+      0%{transform: rotateX(0deg) translateY(0)}
+      60%{transform: rotateX(55deg) translateY(-12px)}
+      100%{transform: rotateX(70deg) translateY(-18px)}
+    }
+    .opening .gift3d{ animation: punch .75s ease forwards; }
+    @keyframes punch{
+      0%{transform: translateY(0) rotateX(12deg) rotateY(-12deg) scale(1)}
+      50%{transform: translateY(-6px) rotateX(16deg) rotateY(-6deg) scale(1.02)}
+      100%{transform: translateY(-2px) rotateX(14deg) rotateY(-10deg) scale(1.00)}
+    }
+
+    .overlay{
+      position:fixed; inset:0;
+      background: rgba(0,0,0,.88);
+      display:none;
+      place-items:center;
+      z-index:9999;
+      padding:14px;
+    }
+    .overlay.show{display:grid;}
+    .videoBox{
+      width:min(1024px, 100%);
+      border-radius: 20px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(16,16,22,.72);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+      backdrop-filter: blur(14px);
+    }
+    .videoTop{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      padding:10px 12px;
+      border-bottom:1px solid rgba(255,255,255,.10);
+    }
+    .videoTop .t{
+      font-size:13px;
+      color: rgba(255,255,255,.90);
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      max-width: 78vw;
+    }
+    .btn{
+      border-radius: 14px;
+      border:1px solid rgba(255,255,255,.16);
+      background: rgba(255,255,255,.10);
+      color: var(--txt);
+      padding:8px 10px;
+      cursor:pointer;
+      font-size:13px;
+      display:inline-flex; gap:8px; align-items:center;
+      text-decoration:none;
+    }
+    .btn:hover{ background: rgba(255,255,255,.14); }
+
+    video{
+      width:100%;
+      height: min(78vh, 680px);
+      background:#000;
+      display:block;
+    }
+
+    .warn{
+      position:fixed;
+      left:14px; right:14px;
+      bottom:14px;
+      text-align:center;
+      font-size:12px;
+      color: rgba(255,255,255,.78);
+      opacity:${hasVideo ? "0" : "1"};
+      pointer-events:none;
+    }
+
+    @media (max-width: 980px){
+      body{overflow:auto}
+      .stage{position:relative; height: calc(100vh - 20px); min-height: 520px;}
+      .gift3d{width: 210px; height: 210px;}
+      .headline{top: 10px;}
+    }
+  </style>
+</head>
+<body>
+  <div class="stars"></div>
+
+  <div class="stage" id="stage">
+    <div class="headline">
+      <h1 id="outTitle">${safeTitle}</h1>
+      <p id="outCaption">${safeCaption}</p>
+    </div>
+
+    <div class="giftWrap" id="giftWrap" ${hasVideo ? "" : 'aria-disabled="true"'}>
+      <div class="gift3d" id="gift3d">
+        <canvas id="fx"></canvas>
+        <div class="glow"></div>
+
+        <div class="lid" id="lid"></div>
+
+        <div class="box"></div>
+        <div class="ribbonV"></div>
+        <div class="ribbonH"></div>
+        <div class="bow">
+          <div class="knot"></div>
         </div>
       </div>
-    `);
+
+      <div class="tap" id="tapText">${hasVideo ? (caption ? "✨ " + safeCaption : "✨ Toque / clique no presente") : "⚠️ Vídeo ainda não foi enviado"}</div>
+    </div>
+  </div>
+
+  <div class="warn">Selecione e envie um vídeo no construtor para este tema funcionar.</div>
+
+  <div class="overlay" id="overlay">
+    <div class="videoBox">
+      <div class="videoTop">
+        <div class="t" id="videoTitle">🎬 ${safeTitle}</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn" id="btnFullscreen">⛶ Fullscreen</button>
+          <button class="btn" id="btnClose">✖️ Fechar</button>
+        </div>
+      </div>
+      <video id="video" ${hasVideo ? `src="${safeVideoUrl}"` : ""} controls playsinline preload="metadata"></video>
+    </div>
+  </div>
+
+  <script>
+    const hasVideo = ${hasVideo ? "true" : "false"};
+    if(hasVideo){
+      const giftWrap = document.getElementById("giftWrap");
+      const gift3d = document.getElementById("gift3d");
+      const overlay = document.getElementById("overlay");
+      const video = document.getElementById("video");
+      const btnClose = document.getElementById("btnClose");
+      const btnFullscreen = document.getElementById("btnFullscreen");
+
+      let opening = false;
+
+      // FX sparkle burst
+      const canvas = document.getElementById("fx");
+      const ctx = canvas.getContext("2d");
+      let W=0,H=0,particles=[];
+      function resizeFX(){
+        const rect = gift3d.getBoundingClientRect();
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
+        W = Math.floor(rect.width * dpr);
+        H = Math.floor(rect.height * dpr);
+        canvas.width = W;
+        canvas.height = H;
+      }
+      window.addEventListener("resize", resizeFX);
+      resizeFX();
+
+      function spawnBurst(){
+        resizeFX();
+        particles = [];
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
+        const cx = W/2, cy = H/2 + 10*dpr;
+
+        const n = 120;
+        for(let i=0;i<n;i++){
+          const a = (Math.random()*Math.PI*2);
+          const sp = (Math.random()*3.2 + 2.4) * dpr;
+          particles.push({
+            x: cx,
+            y: cy,
+            vx: Math.cos(a)*sp,
+            vy: Math.sin(a)*sp - (Math.random()*2.2*dpr),
+            r: (Math.random()*2.2 + 0.8)*dpr,
+            life: 1,
+            dl: Math.random()*0.018 + 0.012,
+            tw: Math.random()*0.8 + 0.2
+          });
+        }
+        tick();
+      }
+
+      function tick(){
+        ctx.clearRect(0,0,W,H);
+        let alive=0;
+
+        for(const p of particles){
+          p.vy += 0.08 * (window.devicePixelRatio||1);
+          p.x += p.vx;
+          p.y += p.vy;
+          p.life -= p.dl;
+
+          if(p.life > 0){
+            alive++;
+            const alpha = Math.max(0, p.life);
+            const glow = (p.tw + Math.sin((1-alpha)*10))*0.5;
+            const hue = (p.x / W) * 360;
+
+            ctx.save();
+            ctx.globalAlpha = alpha * 0.9;
+            ctx.fillStyle = \`hsla(\${hue}, 90%, 65%, \${alpha})\`;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r*(1+glow*0.8), 0, Math.PI*2);
+            ctx.fill();
+
+            ctx.globalAlpha = alpha * 0.22;
+            ctx.fillStyle = \`hsla(\${hue}, 100%, 85%, \${alpha})\`;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r*2.2*(1+glow), 0, Math.PI*2);
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+
+        if(alive>0) requestAnimationFrame(tick);
+        else ctx.clearRect(0,0,W,H);
+      }
+
+      function tryEnterFullscreen(el){
+        try{
+          if(el.requestFullscreen) return el.requestFullscreen();
+          if(el.webkitRequestFullscreen) return el.webkitRequestFullscreen();
+          if(el.webkitEnterFullscreen) return el.webkitEnterFullscreen();
+        }catch(e){}
+      }
+
+      async function openGift(){
+        if(opening) return;
+        opening = true;
+        giftWrap.classList.add("opening");
+
+        spawnBurst();
+        await new Promise(r=>setTimeout(r, 650));
+
+        overlay.classList.add("show");
+        video.muted = false;
+        video.volume = 1;
+
+        try{ await video.play(); }catch(e){}
+
+        // fullscreen pode falhar em alguns contextos (ex.: preview), botão resolve
+        tryEnterFullscreen(video);
+
+        setTimeout(()=> giftWrap.classList.remove("opening"), 400);
+        opening = false;
+      }
+
+      giftWrap.addEventListener("click", openGift);
+
+      function closeVideo(){
+        overlay.classList.remove("show");
+        try{ video.pause(); }catch(e){}
+        try{
+          if(document.fullscreenElement) document.exitFullscreen();
+        }catch(e){}
+      }
+
+      btnClose.addEventListener("click", closeVideo);
+      btnFullscreen.addEventListener("click", ()=> tryEnterFullscreen(video));
+      overlay.addEventListener("click", (e)=>{ if(e.target === overlay) closeVideo(); });
+    }
+  <\/script>
+</body>
+</html>`;
   }
 
   function basePreviewEmpty(){
