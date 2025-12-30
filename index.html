@@ -394,7 +394,6 @@
       contentType: file.type || undefined,
       onUploadProgress: (ev) => {
         if(!onProgress) return;
-        // ev: { loaded, total, percentage }
         if(typeof ev?.percentage === "number") onProgress(ev.percentage);
       }
     });
@@ -423,7 +422,7 @@
     } else {
       el = document.createElement("input");
       el.id = id;
-      el.type = "text";
+      el.type = field.inputType || "text";   // ✅ suporta date/time/etc
       el.value = value ?? "";
       if(field.placeholder) el.placeholder = field.placeholder;
     }
@@ -587,7 +586,7 @@
   $("#btnMyLinks").addEventListener("click", openMyLinksModal);
 
   // =========================
-  // THEMES (inclui Presente + Vídeo Glass)
+  // THEMES (inclui Presente + Vídeo Glass + Convite VIP)
   // =========================
   const THEMES = {
     amor: {
@@ -630,6 +629,26 @@
         { key:"video", label:"Vídeo (até 25MB)", type:"file", accept:"video/*", help:"Selecione um vídeo para enviar." }
       ],
       generate: (data, asset) => genPresenteVideoGlass(data, asset)
+    },
+
+    // ✅ NOVO: Convite VIP
+    vipConvite: {
+      emoji: "🥂",
+      name: "Convite VIP",
+      desc: "Ingresso VIP premium + confirmação + trailer opcional.",
+      hint: "Preencha os dados. Trailer (vídeo) é opcional (até 25MB).",
+      fields: [
+        { key:"event", label:"Nome do evento", placeholder:"Convite VIP — Evento Exclusivo" },
+        { key:"guest", label:"Nome do convidado (opcional)", placeholder:"Ex: Nicollas" },
+        { key:"date", label:"Data", inputType:"date", placeholder:"" },
+        { key:"time", label:"Hora", inputType:"time", placeholder:"" },
+        { key:"place", label:"Local", placeholder:"Ex: Salão Imperial" },
+        { key:"address", label:"Endereço (pra Maps)", placeholder:"Av. Paulista, 1000 - São Paulo" },
+        { key:"dress", label:"Dress code (opcional)", placeholder:"Ex: Traje preto (all black)" },
+        { key:"message", label:"Mensagem (opcional)", type:"textarea", placeholder:"Escreva uma mensagem curta pro convidado…" },
+        { key:"video", label:"Vídeo (trailer opcional — até 25MB)", type:"file", accept:"video/*", help:"Opcional. Se enviar, aparece o botão “Assistir Trailer (VIP)”." }
+      ],
+      generate: (data, asset) => genConviteVIP(data, asset)
     }
   };
 
@@ -651,13 +670,24 @@
     presenteVideo: {
       title: "Hoje é dia de comemorar! 🎉",
       caption: "Toque no presente pra abrir a surpresa"
+    },
+    vipConvite: {
+      event: "Convite VIP — Evento Exclusivo",
+      guest: "",
+      date: "",
+      time: "",
+      place: "Local VIP",
+      address: "",
+      dress: "",
+      message: "Você está na lista VIP. Confirme presença e prepare-se para uma noite especial. ✨"
     }
   };
 
   const assets = {
     amor: { photo: null },
     simples: {},
-    presenteVideo: { videoFile: null, videoUrl: "" }
+    presenteVideo: { videoFile: null, videoUrl: "" },
+    vipConvite: { videoFile: null, videoUrl: "" }
   };
 
   function refreshPayButtonState(){
@@ -670,6 +700,7 @@
       pay.disabled = !assets.presenteVideo.videoUrl;
       return;
     }
+    // vipConvite: vídeo é opcional
     pay.disabled = false;
   }
 
@@ -726,7 +757,7 @@
             return;
           }
 
-          // VÍDEO (tema presenteVideo) -> sobe pro Blob e salva URL
+          // VÍDEO (tema presenteVideo) -> obrigatório
           if(themeId === "presenteVideo" && field.key === "video"){
             if(!f){
               assets.presenteVideo.videoFile = null;
@@ -769,6 +800,49 @@
             return;
           }
 
+          // VÍDEO opcional (tema vipConvite)
+          if(themeId === "vipConvite" && field.key === "video"){
+            if(!f){
+              assets.vipConvite.videoFile = null;
+              assets.vipConvite.videoUrl = "";
+              setHelp("video", "Opcional. Se enviar, aparece o botão “Assistir Trailer (VIP)”.");
+              updatePreview();
+              refreshPayButtonState();
+              return;
+            }
+
+            const MAX = 25 * 1024 * 1024;
+            if(f.size > MAX){
+              assets.vipConvite.videoFile = null;
+              assets.vipConvite.videoUrl = "";
+              inputEl.value = "";
+              setHelp("video", "❌ Vídeo muito grande. Limite: 25MB.");
+              alert("Vídeo muito grande. Limite: 25MB.");
+              updatePreview();
+              refreshPayButtonState();
+              return;
+            }
+
+            setHelp("video", "⏳ Enviando vídeo… 0%");
+            try{
+              const url = await uploadVideoToBlob(f, (pct)=> setHelp("video", `⏳ Enviando vídeo… ${Math.round(pct)}%`));
+              assets.vipConvite.videoFile = f;
+              assets.vipConvite.videoUrl = url;
+              setHelp("video", "✅ Trailer enviado! (o botão VIP vai aparecer)");
+            }catch(err){
+              console.error("Falha no upload do vídeo:", err);
+              assets.vipConvite.videoFile = null;
+              assets.vipConvite.videoUrl = "";
+              inputEl.value = "";
+              setHelp("video", "❌ Falha no upload. Veja o console (F12) para detalhes.");
+              alert("Falha no upload do vídeo. Veja o console (F12) para detalhes.");
+            }
+
+            updatePreview();
+            refreshPayButtonState();
+            return;
+          }
+
           updatePreview();
           refreshPayButtonState();
           return;
@@ -787,6 +861,13 @@
       setHelp("video", assets.presenteVideo.videoUrl
         ? "✅ Vídeo já enviado (nesta sessão)."
         : "Selecione um vídeo para enviar."
+      );
+    }
+
+    if(themeId === "vipConvite"){
+      setHelp("video", assets.vipConvite.videoUrl
+        ? "✅ Trailer já enviado (nesta sessão)."
+        : "Opcional. Se enviar, aparece o botão “Assistir Trailer (VIP)”."
       );
     }
   }
@@ -880,7 +961,7 @@
         status: "pending",
         checkoutUrl,
         finalUrl: null,
-        title: (state[themeId]?.title || `Cartinha (${themeId})`)
+        title: (state[themeId]?.title || state[themeId]?.event || `Cartinha (${themeId})`)
       });
 
       openModal({
@@ -1062,7 +1143,7 @@ ${body}
     `);
   }
 
-  // ✅ Tema novo (o bonito): Presente Glass + vídeo (usa a.videoUrl)
+  // ✅ Tema: Presente Glass + vídeo (usa a.videoUrl)
   function genPresenteVideoGlass(data, a){
     const title = (data.title || "Hoje é dia de comemorar! 🎉").trim();
     const caption = (data.caption || "").trim();
@@ -1463,7 +1544,6 @@ ${body}
 
       let opening = false;
 
-      // FX sparkle burst
       const canvas = document.getElementById("fx");
       const ctx = canvas.getContext("2d");
       let W=0,H=0,particles=[];
@@ -1560,7 +1640,6 @@ ${body}
 
         try{ await video.play(); }catch(e){}
 
-        // fullscreen pode falhar em alguns contextos (ex.: preview), botão resolve
         tryEnterFullscreen(video);
 
         setTimeout(()=> giftWrap.classList.remove("opening"), 400);
@@ -1581,6 +1660,500 @@ ${body}
       btnFullscreen.addEventListener("click", ()=> tryEnterFullscreen(video));
       overlay.addEventListener("click", (e)=>{ if(e.target === overlay) closeVideo(); });
     }
+  <\/script>
+</body>
+</html>`;
+  }
+
+  // ✅ Tema: Convite VIP (vídeo opcional)
+  function genConviteVIP(data, a){
+    const event = (data.event || "Convite VIP — Evento Exclusivo").trim();
+    const guest = (data.guest || "").trim();
+    const date = (data.date || "").trim();
+    const time = (data.time || "").trim();
+    const place = (data.place || "").trim();
+    const address = (data.address || "").trim();
+    const dress = (data.dress || "").trim();
+    const message = (data.message || "").trim();
+
+    const videoUrl = (a && a.videoUrl) ? String(a.videoUrl) : "";
+    const hasVideo = !!videoUrl;
+
+    const mapsUrl = address
+      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+      : "";
+
+    function makeCode(){
+      const seed = `${event}|${guest}|${date}|${time}|${place}|${address}`.toLowerCase();
+      let h = 2166136261;
+      for(let i=0;i<seed.length;i++){
+        h ^= seed.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      const hex = (h >>> 0).toString(16).toUpperCase().padStart(8,"0").slice(0,8);
+      return `VIP-${hex}`;
+    }
+    const code = makeCode();
+
+    const safeEvent = escHtml(event);
+    const safeGuest = escHtml(guest);
+    const safeDate  = escHtml(date);
+    const safeTime  = escHtml(time);
+    const safePlace = escHtml(place);
+    const safeAddr  = escHtml(address);
+    const safeDress = escHtml(dress);
+    const safeMsg   = escHtml(message);
+
+    const safeMapsUrl = escAttr(mapsUrl);
+    const safeVideoUrl = escAttr(videoUrl);
+
+    const waText =
+      `✅ Confirmação VIP\n\n` +
+      `Evento: ${event}\n` +
+      (guest ? `Convidado: ${guest}\n` : "") +
+      (date ? `Data: ${date}\n` : "") +
+      (time ? `Hora: ${time}\n` : "") +
+      (place ? `Local: ${place}\n` : "") +
+      (address ? `Endereço: ${address}\n` : "") +
+      `\nEstou confirmando minha presença.`;
+
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(waText)}`;
+
+    return `<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>🥂 ${safeEvent}</title>
+  <style>
+    :root{
+      --bg1:#070A12;
+      --bg2:#0C1022;
+      --panel: rgba(255,255,255,.06);
+      --stroke: rgba(255,255,255,.12);
+      --text: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.70);
+      --gold1:#F7D77A;
+      --shadow: 0 22px 70px rgba(0,0,0,.55);
+      --r: 22px;
+      --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family: var(--font);
+      color: var(--text);
+      background:
+        radial-gradient(900px 700px at 20% 15%, rgba(247,215,122,.18) 0%, transparent 60%),
+        radial-gradient(900px 700px at 80% 20%, rgba(140,90,255,.18) 0%, transparent 62%),
+        radial-gradient(900px 700px at 50% 110%, rgba(70,210,255,.10) 0%, transparent 60%),
+        linear-gradient(135deg, var(--bg1), var(--bg2));
+      overflow:hidden;
+    }
+    .wrap{
+      min-height:100%;
+      display:grid;
+      place-items:center;
+      padding: 22px;
+    }
+    .shell{
+      width:min(1040px, 100%);
+      border-radius: calc(var(--r) + 6px);
+      border:1px solid var(--stroke);
+      background: rgba(255,255,255,.05);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(16px);
+      overflow:hidden;
+    }
+    .top{
+      padding:18px 18px 16px;
+      border-bottom:1px solid rgba(255,255,255,.08);
+      display:flex;
+      align-items:flex-end;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    .title{
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      min-width: 240px;
+    }
+    .title h1{
+      margin:0;
+      font-size: clamp(18px, 2.6vw, 30px);
+      letter-spacing: .2px;
+      font-weight: 900;
+      line-height:1.12;
+    }
+    .title .sub{
+      font-size: 12px;
+      color: var(--muted);
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(247,215,122,.25);
+      background: rgba(247,215,122,.08);
+      color: rgba(255,255,255,.90);
+      font-size:12px;
+      white-space:nowrap;
+    }
+    .badge b{ color: var(--gold1); font-weight:800; }
+
+    .grid{
+      display:grid;
+      grid-template-columns: 1.05fr .95fr;
+      gap:14px;
+      padding: 16px;
+    }
+    .panel{
+      border-radius: var(--r);
+      border:1px solid var(--stroke);
+      background: var(--panel);
+      box-shadow: 0 16px 45px rgba(0,0,0,.25);
+      overflow:hidden;
+    }
+    .left{
+      padding:16px;
+      display:grid;
+      gap:12px;
+      align-content:start;
+    }
+    .kv{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:10px;
+    }
+    .cell{
+      border-radius: 16px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.18);
+      padding:12px;
+      min-height: 62px;
+    }
+    .k{ font-size:11px; color: var(--muted); letter-spacing:.3px; text-transform:uppercase; }
+    .v{ margin-top:6px; font-size:14px; font-weight:700; color: rgba(255,255,255,.92); }
+    .v.muted{ font-weight:600; color: rgba(255,255,255,.82); }
+
+    .msg{
+      border-radius: 18px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.16);
+      padding:14px;
+      line-height:1.55;
+      color: rgba(255,255,255,.86);
+      white-space:pre-wrap;
+      min-height: 96px;
+    }
+
+    .actions{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+
+    .btn{
+      appearance:none;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.08);
+      color: rgba(255,255,255,.92);
+      padding:10px 12px;
+      border-radius: 14px;
+      cursor:pointer;
+      font-size:13px;
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      text-decoration:none;
+      user-select:none;
+    }
+    .btn:hover{ background: rgba(255,255,255,.12); }
+    .btn.primary{
+      border-color: rgba(247,215,122,.35);
+      background: linear-gradient(135deg, rgba(247,215,122,.18), rgba(215,185,92,.10));
+    }
+    .btn.primary b{ color: var(--gold1); }
+    .btn:disabled{
+      opacity:.55;
+      cursor:not-allowed;
+    }
+
+    .ticket{
+      padding:16px;
+      display:grid;
+      gap:12px;
+      align-content:start;
+      position:relative;
+    }
+    .ticket:before{
+      content:"";
+      position:absolute;
+      inset:-1px;
+      background:
+        radial-gradient(500px 140px at 30% 10%, rgba(247,215,122,.18), transparent 60%),
+        radial-gradient(500px 160px at 70% 0%, rgba(140,90,255,.14), transparent 60%);
+      pointer-events:none;
+      opacity:.9;
+    }
+
+    .card2{
+      position:relative;
+      border-radius: 20px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.20);
+      overflow:hidden;
+      padding:14px;
+    }
+
+    .barcode{
+      height: 54px;
+      border-radius: 14px;
+      background:
+        repeating-linear-gradient(
+          90deg,
+          rgba(255,255,255,.85) 0px,
+          rgba(255,255,255,.85) 2px,
+          rgba(255,255,255,.10) 2px,
+          rgba(255,255,255,.10) 6px
+        );
+      opacity:.22;
+      margin-bottom:12px;
+    }
+
+    .ticketRow{
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      align-items:flex-start;
+    }
+    .code{
+      font-weight:900;
+      letter-spacing:.6px;
+      color: var(--gold1);
+      font-size:14px;
+      text-align:right;
+      white-space:nowrap;
+    }
+    .status{
+      margin-top:6px;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(247,215,122,.25);
+      background: rgba(247,215,122,.08);
+      font-size:12px;
+      color: rgba(255,255,255,.88);
+      white-space:nowrap;
+    }
+    .status b{ color: var(--gold1); }
+
+    .small{
+      margin-top:8px;
+      font-size:12px;
+      color: rgba(255,255,255,.70);
+      line-height:1.45;
+    }
+
+    .overlay{
+      position:fixed;
+      inset:0;
+      background: rgba(0,0,0,.88);
+      display:none;
+      place-items:center;
+      padding:14px;
+      z-index:9999;
+    }
+    .overlay.show{display:grid;}
+    .vbox{
+      width:min(1024px, 100%);
+      border-radius: 20px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(16,16,22,.72);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+      backdrop-filter: blur(14px);
+    }
+    .vtop{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      padding:10px 12px;
+      border-bottom:1px solid rgba(255,255,255,.10);
+    }
+    .vtop .t{
+      font-size:13px;
+      color: rgba(255,255,255,.90);
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      max-width: 78vw;
+    }
+    video{
+      width:100%;
+      height: min(78vh, 680px);
+      background:#000;
+      display:block;
+    }
+
+    @media (max-width: 980px){
+      body{ overflow:auto; }
+      .grid{ grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="shell">
+      <div class="top">
+        <div class="title">
+          <h1>${safeEvent}</h1>
+          <div class="sub">
+            <span class="badge">Acesso <b>VIP</b> • Entrada exclusiva</span>
+            ${guest ? `<span class="badge">Convidado: <b>${safeGuest}</b></span>` : ``}
+          </div>
+        </div>
+        <div class="badge" title="Código do ingresso">Código: <b>${escHtml(code)}</b></div>
+      </div>
+
+      <div class="grid">
+        <div class="panel">
+          <div class="left">
+            <div class="kv">
+              <div class="cell">
+                <div class="k">Data</div>
+                <div class="v ${date ? "" : "muted"}">${date ? safeDate : "—"}</div>
+              </div>
+              <div class="cell">
+                <div class="k">Hora</div>
+                <div class="v ${time ? "" : "muted"}">${time ? safeTime : "—"}</div>
+              </div>
+              <div class="cell" style="grid-column: 1 / -1;">
+                <div class="k">Local</div>
+                <div class="v ${place ? "" : "muted"}">${place ? safePlace : "—"}</div>
+              </div>
+              <div class="cell" style="grid-column: 1 / -1;">
+                <div class="k">Endereço</div>
+                <div class="v ${address ? "" : "muted"}">${address ? safeAddr : "—"}</div>
+                ${address ? `<div class="small"><a class="btn" href="${safeMapsUrl}" target="_blank" rel="noopener">📍 Abrir no Maps</a></div>` : ``}
+              </div>
+              <div class="cell" style="grid-column: 1 / -1;">
+                <div class="k">Dress code</div>
+                <div class="v ${dress ? "" : "muted"}">${dress ? safeDress : "—"}</div>
+              </div>
+            </div>
+
+            ${message ? `<div class="msg">${safeMsg}</div>` : ``}
+
+            <div class="actions">
+              <a class="btn primary" href="${escAttr(waUrl)}" target="_blank" rel="noopener">✅ Confirmar presença (WhatsApp)</a>
+              ${hasVideo
+                ? `<button class="btn" id="btnTrailer">🎬 Assistir Trailer (VIP)</button>`
+                : `<button class="btn" disabled title="Sem trailer">🎬 Assistir Trailer (VIP)</button>`
+              }
+            </div>
+
+            <div class="small">
+              Dica: confirme presença pelo WhatsApp. Se tiver trailer, assista pelo botão VIP.
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="ticket">
+            <div class="card2">
+              <div class="barcode"></div>
+              <div class="ticketRow">
+                <div>
+                  <div class="k">Ingresso</div>
+                  <div class="v">VIP PASS</div>
+                  ${guest ? `<div class="small">Válido para: <b>${safeGuest}</b></div>` : ``}
+                </div>
+                <div style="text-align:right;">
+                  <div class="k">Código</div>
+                  <div class="code">${escHtml(code)}</div>
+                  <div class="status">Status: <b>ATIVO</b></div>
+                </div>
+              </div>
+              <div class="small" style="margin-top:12px;">
+                Apresente este ingresso VIP na entrada. Chegue com antecedência.
+              </div>
+            </div>
+
+            <div class="small">
+              ${hasVideo ? "O trailer abre em overlay (tela cheia pode depender do navegador)." : "Este convite não possui trailer."}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="ov">
+    <div class="vbox">
+      <div class="vtop">
+        <div class="t">🎬 Trailer VIP</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn" id="btnFs">⛶ Fullscreen</button>
+          <button class="btn" id="btnClose">✖️ Fechar</button>
+        </div>
+      </div>
+      <video id="v" ${hasVideo ? `src="${safeVideoUrl}"` : ""} controls playsinline preload="metadata"></video>
+    </div>
+  </div>
+
+  <script>
+    (function(){
+      const hasVideo = ${hasVideo ? "true" : "false"};
+      if(!hasVideo) return;
+
+      const ov = document.getElementById("ov");
+      const v = document.getElementById("v");
+      const btnTrailer = document.getElementById("btnTrailer");
+      const btnClose = document.getElementById("btnClose");
+      const btnFs = document.getElementById("btnFs");
+
+      function tryFs(el){
+        try{
+          if(el.requestFullscreen) return el.requestFullscreen();
+          if(el.webkitRequestFullscreen) return el.webkitRequestFullscreen();
+          if(el.webkitEnterFullscreen) return el.webkitEnterFullscreen();
+        }catch(e){}
+      }
+
+      async function open(){
+        ov.classList.add("show");
+        try{
+          v.muted = false;
+          v.volume = 1;
+          await v.play();
+        }catch(e){}
+      }
+      function close(){
+        ov.classList.remove("show");
+        try{ v.pause(); }catch(e){}
+        try{ if(document.fullscreenElement) document.exitFullscreen(); }catch(e){}
+      }
+
+      btnTrailer && btnTrailer.addEventListener("click", open);
+      btnClose.addEventListener("click", close);
+      btnFs.addEventListener("click", ()=> tryFs(v));
+      ov.addEventListener("click", (e)=>{ if(e.target === ov) close(); });
+    })();
   <\/script>
 </body>
 </html>`;
