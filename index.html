@@ -1,4 +1,4 @@
-  <!doctype html>
+ <!doctype html>
 <html lang="pt-br">
 <head>
   <meta charset="utf-8" />
@@ -78,7 +78,7 @@
     .theme .desc{font-size:12px; color:var(--muted); margin:4px 0 0}
 
     label{font-size:12px; color:var(--muted)}
-    input, textarea{
+    input, textarea, select{
       width:100%;
       margin-top:6px;
       border-radius: 14px;
@@ -90,6 +90,7 @@
       font-size:13px;
     }
     textarea{min-height: 110px; resize:vertical;}
+    select{appearance:auto;}
     .grid{display:grid; gap:10px;}
     .btn{
       border-radius: 14px;
@@ -409,16 +410,40 @@
     wrap.innerHTML = `<label for="${id}">${escHtml(field.label)}</label>`;
 
     let el;
+
     if(field.type === "textarea"){
       el = document.createElement("textarea");
       el.id = id;
       el.value = value ?? "";
       if(field.placeholder) el.placeholder = field.placeholder;
+
     } else if(field.type === "file"){
       el = document.createElement("input");
       el.id = id;
       el.type = "file";
       el.accept = field.accept || "";
+
+    } else if(field.type === "select"){
+      el = document.createElement("select");
+      el.id = id;
+
+      (field.options || []).forEach(opt=>{
+        const o = document.createElement("option");
+        if(typeof opt === "string"){
+          o.value = opt;
+          o.textContent = opt;
+        } else {
+          o.value = opt.value;
+          o.textContent = opt.label ?? opt.value;
+        }
+        el.appendChild(o);
+      });
+
+      const fallback = (field.options && field.options[0])
+        ? (typeof field.options[0] === "string" ? field.options[0] : field.options[0].value)
+        : "";
+      el.value = (value ?? fallback);
+
     } else {
       el = document.createElement("input");
       el.id = id;
@@ -586,7 +611,7 @@
   $("#btnMyLinks").addEventListener("click", openMyLinksModal);
 
   // =========================
-  // THEMES (inclui Presente + Vídeo Glass + Convite VIP)
+  // THEMES (inclui Presente + Vídeo Glass + Convite VIP + BO ZUEIRA)
   // =========================
   const THEMES = {
     amor: {
@@ -631,7 +656,6 @@
       generate: (data, asset) => genPresenteVideoGlass(data, asset)
     },
 
-    // ✅ NOVO: Convite VIP
     vipConvite: {
       emoji: "🥂",
       name: "Convite VIP",
@@ -649,6 +673,36 @@
         { key:"video", label:"Vídeo (trailer opcional — até 25MB)", type:"file", accept:"video/*", help:"Opcional. Se enviar, aparece o botão “Assistir Trailer (VIP)”." }
       ],
       generate: (data, asset) => genConviteVIP(data, asset)
+    },
+
+    // ✅ NOVO: BO (Zueira)
+    boZueira: {
+      emoji: "🕵️",
+      name: "BO (Zueira)",
+      desc: "Boletim de ocorrência divertido, com carimbo e gravidade.",
+      hint: "Preencha como se fosse um BO — só que na brincadeira 😄",
+      fields: [
+        { key:"org", label:"Órgão", placeholder:"Delegacia da Zueira" },
+        { key:"title", label:"Título", placeholder:"Boletim de Ocorrência — Caso Inusitado" },
+        {
+          key:"status",
+          label:"Status",
+          type:"select",
+          options: [
+            { value:"analise", label:"Em averiguação" },
+            { value:"confirmado", label:"Procede" },
+            { value:"urgente", label:"Prioridade" },
+            { value:"arquivado", label:"Arquivado" }
+          ]
+        },
+        { key:"local", label:"Local", placeholder:"Área comum / ambiente virtual" },
+        { key:"categoria", label:"Classificação do caso", placeholder:"Suspeita de excesso de charme" },
+        { key:"envolvidos", label:"Envolvidos", placeholder:"Sujeito(s) não identificado(s)" },
+        { key:"evidencias", label:"Evidências (opcional)", placeholder:"prints, áudios suspeitos, risada fora do padrão" },
+        { key:"relato", label:"Relato", type:"textarea", placeholder:"Descreva o ocorrido..." },
+        { key:"assinatura", label:"Assinatura", placeholder:"Agente responsável (modo brincadeira)" }
+      ],
+      generate: (data) => genBoZueira(data)
     }
   };
 
@@ -680,6 +734,26 @@
       address: "",
       dress: "",
       message: "Você está na lista VIP. Confirme presença e prepare-se para uma noite especial. ✨"
+    },
+    boZueira: {
+      org: "Delegacia da Zueira",
+      title: "Boletim de Ocorrência — Caso Inusitado",
+      status: "analise",
+      local: "Área comum / ambiente virtual",
+      categoria: "Suspeita de excesso de charme",
+      envolvidos: "Sujeito(s) não identificado(s)",
+      evidencias: "prints, áudios suspeitos, risada fora do padrão",
+      relato:
+        "No horário indicado, foi detectada uma ocorrência incomum, com impacto direto no humor do ambiente.\n\n" +
+        "Relato preliminar:\n" +
+        "• risadas fora do padrão\n" +
+        "• elogios suspeitos de “bom demais”\n" +
+        "• possível tentativa de melhorar o dia de terceiros\n\n" +
+        "Providências sugeridas:\n" +
+        "• manter a brincadeira sob supervisão\n" +
+        "• compartilhar com alguém de confiança\n" +
+        "• evitar excesso de carisma em locais públicos",
+      assinatura: "Agente responsável (modo brincadeira)"
     }
   };
 
@@ -687,7 +761,8 @@
     amor: { photo: null },
     simples: {},
     presenteVideo: { videoFile: null, videoUrl: "" },
-    vipConvite: { videoFile: null, videoUrl: "" }
+    vipConvite: { videoFile: null, videoUrl: "" },
+    boZueira: {}
   };
 
   function refreshPayButtonState(){
@@ -701,6 +776,7 @@
       return;
     }
     // vipConvite: vídeo é opcional
+    // boZueira: sem assets obrigatórios
     pay.disabled = false;
   }
 
@@ -848,7 +924,7 @@
           return;
         }
 
-        // Campos de texto
+        // Campos de texto / select
         data[field.key] = inputEl.value;
         updatePreview();
         refreshPayButtonState();
@@ -1143,6 +1219,303 @@ ${body}
     `);
   }
 
+  // ✅ Tema: BO (zueira) — integrado
+  function genBoZueira(data){
+    const pad = (n)=> String(n).padStart(2,"0");
+    const now = new Date();
+    const date = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
+    const time = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+    const org = (data.org || "Delegacia da Zueira").trim();
+    const title = (data.title || "Boletim de Ocorrência — Caso Inusitado").trim();
+    const status = (data.status || "analise").trim();
+    const local = (data.local || "Área comum / ambiente virtual").trim();
+    const categoria = (data.categoria || "Suspeita de excesso de charme").trim();
+    const envolvidos = (data.envolvidos || "Sujeito(s) não identificado(s)").trim();
+    const evidencias = (data.evidencias || "").trim();
+
+    const defaultRelato =
+      "No horário indicado, foi detectada uma ocorrência incomum, com impacto direto no humor do ambiente.\n\n" +
+      "Relato preliminar:\n" +
+      "• risadas fora do padrão\n" +
+      "• elogios suspeitos de “bom demais”\n" +
+      "• possível tentativa de melhorar o dia de terceiros\n\n" +
+      "Providências sugeridas:\n" +
+      "• manter a brincadeira sob supervisão\n" +
+      "• compartilhar com alguém de confiança\n" +
+      "• evitar excesso de carisma em locais públicos";
+
+    const rel = (data.relato && String(data.relato).trim()) ? String(data.relato) : defaultRelato;
+    const assinatura = (data.assinatura || "Agente responsável (modo brincadeira)").trim();
+
+    // hash simples (FNV-1a) pra gerar protocolo/gravidade determinísticos
+    const seed = `${org}|${title}|${status}|${local}|${categoria}|${envolvidos}|${evidencias}|${date}|${time}`.toLowerCase();
+    let h = 2166136261;
+    for(let i=0;i<seed.length;i++){
+      h ^= seed.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    const n1 = (h >>> 0);
+    const protoA = 100000 + (n1 % 900000);
+    const protoB = 10 + ((n1 >>> 9) % 89);
+    const proto = `BO-${protoA}-${protoB}`;
+
+    const statusMap = {
+      analise:   { label:"Em averiguação", dot:"rgba(255,211,107,.95)", vibe:"🕵️", stamp:"CARIMBO: EM AVERIGUAÇÃO" },
+      confirmado:{ label:"Procede",        dot:"rgba(157,255,181,.95)", vibe:"✅", stamp:"CARIMBO: PROCEDE" },
+      urgente:   { label:"Prioridade",     dot:"rgba(251,113,133,.95)", vibe:"🚨", stamp:"CARIMBO: PRIORIDADE" },
+      arquivado: { label:"Arquivado",      dot:"rgba(255,255,255,.55)", vibe:"📁", stamp:"CARIMBO: ARQUIVADO" }
+    };
+    const v = statusMap[status] || statusMap.analise;
+
+    const levels = [
+      { label:"Nível de Gravidade: BAIXO", bar: 18 },
+      { label:"Nível de Gravidade: MÉDIO", bar: 42 },
+      { label:"Nível de Gravidade: ALTO",  bar: 68 },
+      { label:"Nível de Gravidade: CRÍTICO", bar: 84 }
+    ];
+    const lvl = levels[n1 % levels.length];
+
+    const safeOrg = escHtml(org);
+    const safeTitle = escHtml(title);
+
+    return `<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>🕵️ ${safeTitle}</title>
+  <style>
+    :root{
+      --bg1:#05070e; --bg2:#0a1430;
+      --paper: rgba(255,255,255,.06);
+      --stroke: rgba(255,255,255,.16);
+      --text: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.70);
+      --shadow: 0 22px 80px rgba(0,0,0,.62);
+      --r: 22px;
+      --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family:var(--font); color:var(--text);
+      background:
+        radial-gradient(1000px 760px at 18% 18%, rgba(124,58,237,.30) 0%, transparent 60%),
+        radial-gradient(1000px 760px at 85% 28%, rgba(251,113,133,.22) 0%, transparent 62%),
+        radial-gradient(1200px 900px at 50% 110%, rgba(34,211,238,.14) 0%, transparent 60%),
+        linear-gradient(135deg, var(--bg1), var(--bg2));
+      min-height:100vh;
+      padding: 18px 0;
+    }
+
+    .doc{
+      width: min(980px, calc(100% - 32px));
+      margin: 0 auto;
+      border-radius:22px;
+      border:1px solid rgba(255,255,255,.16);
+      background: var(--paper);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+      overflow:hidden;
+      position:relative;
+      min-height: 520px;
+    }
+    .doc:before{
+      content:"";
+      position:absolute; inset:-120px;
+      background:
+        radial-gradient(circle at 20% 25%, rgba(255,255,255,.10), transparent 48%),
+        radial-gradient(circle at 82% 28%, rgba(255,255,255,.08), transparent 52%),
+        repeating-linear-gradient(35deg, rgba(255,255,255,.04) 0 1px, transparent 1px 9px),
+        repeating-linear-gradient(-35deg, rgba(255,255,255,.03) 0 1px, transparent 1px 11px);
+      opacity:.55; pointer-events:none; transform: rotate(-2deg);
+    }
+    .top{
+      position:relative;
+      padding:14px 16px;
+      border-bottom:1px solid rgba(255,255,255,.10);
+      display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;
+    }
+    .brand{display:flex; gap:12px; align-items:center; min-width:0;}
+    .shield{
+      width:46px; height:46px; border-radius:18px;
+      border:1px solid rgba(255,255,255,.14);
+      background:
+        radial-gradient(14px 14px at 28% 26%, rgba(255,255,255,.35) 0%, transparent 60%),
+        linear-gradient(135deg, rgba(255,255,255,.14), rgba(255,255,255,.04));
+      display:grid; place-items:center;
+      box-shadow:0 18px 40px rgba(0,0,0,.40);
+      position:relative; overflow:hidden;
+      flex:0 0 auto;
+    }
+    .shield:after{
+      content:""; position:absolute; inset:-70%;
+      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.35), transparent 55%);
+      transform: rotate(18deg); opacity:.5;
+    }
+    .shield span{font-size:18px; position:relative;}
+    .bn{min-width:0;}
+    .bn .org{
+      margin:0; font-size:13px; font-weight:950; letter-spacing:.2px;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:70ch;
+    }
+    .bn .sub{
+      margin:4px 0 0; font-size:12px; color:var(--muted);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:70ch;
+    }
+    .metaRow{display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; align-items:center;}
+    .chip{
+      display:inline-flex; gap:8px; align-items:center;
+      padding:6px 10px; border-radius:999px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.16);
+      font-size:12px; color: rgba(255,255,255,.84);
+      white-space:nowrap;
+    }
+    .dot{width:8px; height:8px; border-radius:999px; background:${escAttr(v.dot)}; box-shadow:0 0 0 4px rgba(255,255,255,.10);}
+    .body{position:relative; padding:16px;}
+    .headline{
+      display:flex; gap:12px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap;
+      margin-bottom:12px;
+    }
+    .headline h2{
+      margin:0; font-size: clamp(16px, 2.2vw, 24px); font-weight:980; letter-spacing:.2px;
+    }
+    .proto{display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;}
+    .tag{
+      font-size:12px; padding:6px 10px; border-radius:999px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      color: rgba(255,255,255,.82);
+      white-space:nowrap;
+    }
+    .stamp{
+      position:absolute; right:16px; top:84px;
+      transform: rotate(12deg);
+      border:2px dashed rgba(255,255,255,.30);
+      padding:10px 14px; border-radius:14px;
+      background: rgba(0,0,0,.14);
+      box-shadow: 0 18px 50px rgba(0,0,0,.35);
+      opacity:.92; user-select:none;
+    }
+    .stamp .s1{display:block; font-weight:950; letter-spacing:.8px; text-transform:uppercase;}
+    .stamp .s2{display:block; font-weight:700; opacity:.9; margin-top:6px; font-size:11px; color: rgba(255,255,255,.85);}
+    .grid2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+    .panel{
+      border-radius:18px; border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.14); padding:12px;
+    }
+    .lab{font-size:11px; color: rgba(255,255,255,.65); letter-spacing:.2px; margin-bottom:8px;}
+    .val{font-size:13px; color: rgba(255,255,255,.90); line-height:1.55; white-space:pre-wrap; word-break:break-word;}
+    .rel{
+      margin-top:12px;
+      border-radius:18px; border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.14);
+      padding:12px;
+    }
+    .txt{white-space:pre-wrap; line-height:1.8; font-size:13px; color: rgba(255,255,255,.90);}
+    .meter{margin-top:12px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;}
+    .ml{font-size:12px; color: rgba(255,255,255,.78); white-space:nowrap;}
+    .bar{
+      flex:1 1 260px; height:12px; border-radius:999px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.16);
+      overflow:hidden; min-width:220px;
+    }
+    .fill{
+      height:100%;
+      width:${escAttr(lvl.bar)}%;
+      background: linear-gradient(90deg, rgba(125,211,252,.85), rgba(167,139,250,.80), rgba(251,113,133,.72));
+      box-shadow:0 0 20px rgba(167,139,250,.20);
+    }
+    .bottom{margin-top:12px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:flex-end;}
+    .note{font-size:12px; color: rgba(255,255,255,.70); line-height:1.45}
+    .sign{
+      display:inline-flex; gap:8px; align-items:center;
+      padding:8px 10px; border-radius:14px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.16);
+      white-space:nowrap;
+      max-width:100%;
+    }
+    .seal{width:12px; height:12px; border-radius:999px; background:${escAttr(v.dot)}; box-shadow:0 0 0 5px rgba(255,255,255,.10);}
+    @media (max-width:980px){
+      .grid2{grid-template-columns:1fr;}
+      .stamp{position:static; transform:none; margin:10px 0 0; display:inline-block;}
+    }
+  </style>
+</head>
+
+<body>
+  <div class="doc">
+    <div class="top">
+      <div class="brand">
+        <div class="shield"><span>${escHtml(v.vibe)}</span></div>
+        <div class="bn">
+          <p class="org">${safeOrg}</p>
+          <p class="sub">Registro recreativo • protocolo <span>${escHtml(proto)}</span></p>
+        </div>
+      </div>
+      <div class="metaRow">
+        <div class="chip"><span class="dot"></span><strong>${escHtml(v.label)}</strong></div>
+        <div class="chip">🗓️ <span>${escHtml(date)}</span></div>
+        <div class="chip">⏱️ <span>${escHtml(time)}</span></div>
+      </div>
+    </div>
+
+    <div class="body">
+      <div class="headline">
+        <h2>${safeTitle}</h2>
+        <div class="proto">
+          <div class="tag">📄 ${escHtml(proto)}</div>
+          <div class="tag">📍 ${escHtml(local || "—")}</div>
+        </div>
+      </div>
+
+      <div class="stamp">
+        <span class="s1">${escHtml(v.stamp)}</span>
+        <span class="s2">${escHtml(lvl.label)}</span>
+      </div>
+
+      <div class="grid2">
+        <div class="panel">
+          <div class="lab">CLASSIFICAÇÃO DO CASO</div>
+          <div class="val">${escHtml(categoria || "—")}</div>
+        </div>
+        <div class="panel">
+          <div class="lab">ENVOLVIDOS</div>
+          <div class="val">${escHtml(envolvidos || "—")}</div>
+        </div>
+        <div class="panel">
+          <div class="lab">LOCAL DO FATO</div>
+          <div class="val">${escHtml(local || "—")}</div>
+        </div>
+        <div class="panel">
+          <div class="lab">EVIDÊNCIAS (SE HOUVER)</div>
+          <div class="val">${escHtml(evidencias || "—")}</div>
+        </div>
+      </div>
+
+      <div class="rel">
+        <div class="lab">RELATO</div>
+        <div class="txt">${escHtml(rel)}</div>
+      </div>
+
+      <div class="meter">
+        <div class="ml">📊 ${escHtml(lvl.label)}</div>
+        <div class="bar"><div class="fill"></div></div>
+      </div>
+
+      <div class="bottom">
+        <div class="note">Este documento é uma peça criativa (zueira). Use com responsabilidade e risadas controladas.</div>
+        <div class="sign"><span class="seal"></span><span>${escHtml(assinatura || "—")}</span></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+  }
+
   // ✅ Tema: Presente Glass + vídeo (usa a.videoUrl)
   function genPresenteVideoGlass(data, a){
     const title = (data.title || "Hoje é dia de comemorar! 🎉").trim();
@@ -1184,7 +1557,6 @@ ${body}
         radial-gradient(1100px 900px at 50% 110%, rgba(70,210,255,.15) 0%, transparent 60%),
         linear-gradient(135deg, var(--bg1), var(--bg2));
     }
-
     .stars{
       position:fixed; inset:-30%;
       background-image:
@@ -1200,34 +1572,10 @@ ${body}
       pointer-events:none;
       filter: blur(.2px);
     }
-    @keyframes drift{
-      from{transform: translate3d(0,0,0)}
-      to{transform: translate3d(-120px, 80px, 0)}
-    }
-
-    .stage{
-      position:fixed;
-      inset:0;
-      display:grid;
-      place-items:center;
-      padding:24px;
-    }
-
-    .headline{
-      position:absolute;
-      top:18px;
-      left:0; right:0;
-      text-align:center;
-      pointer-events:none;
-      padding: 0 14px;
-    }
-    .headline h1{
-      margin:0;
-      font-size: clamp(18px, 3vw, 30px);
-      font-weight:900;
-      letter-spacing:.2px;
-      text-shadow: 0 18px 60px rgba(0,0,0,.60);
-    }
+    @keyframes drift{ from{transform: translate3d(0,0,0)} to{transform: translate3d(-120px, 80px, 0)} }
+    .stage{ position:fixed; inset:0; display:grid; place-items:center; padding:24px; }
+    .headline{ position:absolute; top:18px; left:0; right:0; text-align:center; pointer-events:none; padding: 0 14px; }
+    .headline h1{ margin:0; font-size: clamp(18px, 3vw, 30px); font-weight:900; letter-spacing:.2px; text-shadow: 0 18px 60px rgba(0,0,0,.60); }
     .headline p{
       margin:8px 0 0;
       font-size: clamp(12px, 2vw, 14px);
@@ -1236,22 +1584,10 @@ ${body}
       opacity:.95;
       display:${caption ? "block" : "none"};
     }
-
-    .giftWrap{
-      position:relative;
-      display:grid;
-      place-items:center;
-      gap:12px;
-      cursor:${hasVideo ? "pointer" : "not-allowed"};
-      user-select:none;
-      transform: translateY(14px);
-    }
-
+    .giftWrap{ position:relative; display:grid; place-items:center; gap:12px; cursor:${hasVideo ? "pointer" : "not-allowed"}; user-select:none; transform: translateY(14px); }
     .tap{
-      font-size:13px;
-      color: rgba(255,255,255,.86);
-      padding:10px 14px;
-      border-radius: 999px;
+      font-size:13px; color: rgba(255,255,255,.86);
+      padding:10px 14px; border-radius: 999px;
       border:1px solid rgba(255,255,255,.14);
       background: rgba(0,0,0,.18);
       backdrop-filter: blur(10px);
@@ -1260,12 +1596,8 @@ ${body}
       text-align:center;
       opacity:${hasVideo ? "1" : ".75"};
     }
-
     .gift3d{
-      width: 240px;
-      height: 240px;
-      position:relative;
-      transform-style: preserve-3d;
+      width: 240px; height: 240px; position:relative; transform-style: preserve-3d;
       filter: drop-shadow(0 28px 70px rgba(0,0,0,.55));
       animation: float 3.2s ease-in-out infinite;
       opacity:${hasVideo ? "1" : ".7"};
@@ -1274,101 +1606,59 @@ ${body}
       0%,100%{transform: translateY(0) rotateX(12deg) rotateY(-12deg)}
       50%{transform: translateY(-10px) rotateX(14deg) rotateY(-8deg)}
     }
-
     .box{
-      position:absolute;
-      inset: 24px;
-      border-radius: 28px;
+      position:absolute; inset: 24px; border-radius: 28px;
       border: 1px solid rgba(255,255,255,.22);
-      background:
-        linear-gradient(135deg, rgba(255,255,255,.14), rgba(255,255,255,.04));
+      background: linear-gradient(135deg, rgba(255,255,255,.14), rgba(255,255,255,.04));
       backdrop-filter: blur(12px);
       overflow:hidden;
     }
     .box:before{
-      content:"";
-      position:absolute;
-      inset:-40%;
+      content:""; position:absolute; inset:-40%;
       background: radial-gradient(circle at 30% 20%, rgba(255,255,255,.55), transparent 48%);
-      transform: rotate(15deg);
-      opacity:.35;
+      transform: rotate(15deg); opacity:.35;
     }
     .box:after{
-      content:"";
-      position:absolute;
-      inset:0;
+      content:""; position:absolute; inset:0;
       background:
         radial-gradient(140px 120px at 70% 30%, rgba(255,90,190,.22), transparent 60%),
         radial-gradient(160px 140px at 25% 80%, rgba(70,210,255,.18), transparent 60%);
-      opacity:.9;
-      mix-blend-mode: screen;
+      opacity:.9; mix-blend-mode: screen;
     }
-
     .lid{
-      position:absolute;
-      left: 18px; right:18px;
-      top: 10px;
-      height: 74px;
-      border-radius: 26px;
-      border: 1px solid rgba(255,255,255,.22);
-      background:
-        linear-gradient(135deg, rgba(255,255,255,.16), rgba(255,255,255,.06));
+      position:absolute; left: 18px; right:18px; top: 10px; height: 74px;
+      border-radius: 26px; border: 1px solid rgba(255,255,255,.22);
+      background: linear-gradient(135deg, rgba(255,255,255,.16), rgba(255,255,255,.06));
       backdrop-filter: blur(12px);
       transform-origin: 50% 100%;
       box-shadow: 0 18px 45px rgba(0,0,0,.35);
       overflow:hidden;
     }
     .lid:before{
-      content:"";
-      position:absolute;
-      inset:-60%;
+      content:""; position:absolute; inset:-60%;
       background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.70), transparent 55%);
-      transform: rotate(18deg);
-      opacity:.35;
+      transform: rotate(18deg); opacity:.35;
     }
-
     .ribbonV, .ribbonH{ position:absolute; inset:0; pointer-events:none; }
     .ribbonV:before{
-      content:"";
-      position:absolute;
-      top: 12px; bottom: 18px;
-      left: 50%;
-      width: 18px;
-      transform: translateX(-50%);
-      border-radius: 999px;
+      content:""; position:absolute; top: 12px; bottom: 18px; left: 50%;
+      width: 18px; transform: translateX(-50%); border-radius: 999px;
       background: linear-gradient(180deg, rgba(255,90,190,.95), rgba(70,210,255,.85));
-      filter: drop-shadow(0 0 18px rgba(255,90,190,.35));
-      opacity:.9;
+      filter: drop-shadow(0 0 18px rgba(255,90,190,.35)); opacity:.9;
     }
     .ribbonH:before{
-      content:"";
-      position:absolute;
-      left: 28px; right: 28px;
-      top: 50%;
-      height: 18px;
-      transform: translateY(-50%);
-      border-radius: 999px;
+      content:""; position:absolute; left: 28px; right: 28px; top: 50%;
+      height: 18px; transform: translateY(-50%); border-radius: 999px;
       background: linear-gradient(90deg, rgba(70,210,255,.90), rgba(255,90,190,.90));
-      filter: drop-shadow(0 0 18px rgba(70,210,255,.30));
-      opacity:.9;
+      filter: drop-shadow(0 0 18px rgba(70,210,255,.30)); opacity:.9;
     }
-
     .bow{
-      position:absolute;
-      top: 24px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 86px;
-      height: 56px;
-      pointer-events:none;
+      position:absolute; top: 24px; left: 50%; transform: translateX(-50%);
+      width: 86px; height: 56px; pointer-events:none;
       filter: drop-shadow(0 18px 30px rgba(0,0,0,.35));
     }
     .bow:before, .bow:after{
-      content:"";
-      position:absolute;
-      top: 12px;
-      width: 38px;
-      height: 30px;
+      content:""; position:absolute; top: 12px; width: 38px; height: 30px;
       border-radius: 18px 18px 18px 6px;
       background: linear-gradient(135deg, rgba(255,90,190,.95), rgba(70,210,255,.85));
       opacity:.92;
@@ -1376,33 +1666,21 @@ ${body}
     .bow:before{left:0; transform: rotate(-18deg)}
     .bow:after{right:0; transform: rotate(18deg); border-radius: 18px 18px 6px 18px;}
     .knot{
-      position:absolute;
-      top: 22px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 18px;
-      height: 18px;
-      border-radius: 8px;
-      background: rgba(255,255,255,.82);
-      opacity:.35;
+      position:absolute; top: 22px; left: 50%; transform: translateX(-50%);
+      width: 18px; height: 18px; border-radius: 8px;
+      background: rgba(255,255,255,.82); opacity:.35;
     }
-
     .glow{
-      position:absolute;
-      inset:-40%;
+      position:absolute; inset:-40%;
       background: radial-gradient(circle at 50% 55%, rgba(255,255,255,.20), transparent 55%);
-      opacity:.9;
-      pointer-events:none;
+      opacity:.9; pointer-events:none;
     }
-
     canvas#fx{
-      position:absolute;
-      inset:-80px;
+      position:absolute; inset:-80px;
       width: calc(100% + 160px);
       height: calc(100% + 160px);
       pointer-events:none;
     }
-
     .opening .lid{ animation: lidPop .65s cubic-bezier(.2,.9,.1,1) forwards; }
     @keyframes lidPop{
       0%{transform: rotateX(0deg) translateY(0)}
@@ -1415,14 +1693,11 @@ ${body}
       50%{transform: translateY(-6px) rotateX(16deg) rotateY(-6deg) scale(1.02)}
       100%{transform: translateY(-2px) rotateX(14deg) rotateY(-10deg) scale(1.00)}
     }
-
     .overlay{
       position:fixed; inset:0;
       background: rgba(0,0,0,.88);
-      display:none;
-      place-items:center;
-      z-index:9999;
-      padding:14px;
+      display:none; place-items:center;
+      z-index:9999; padding:14px;
     }
     .overlay.show{display:grid;}
     .videoBox{
@@ -1435,20 +1710,13 @@ ${body}
       backdrop-filter: blur(14px);
     }
     .videoTop{
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:10px;
-      padding:10px 12px;
+      display:flex; justify-content:space-between; align-items:center;
+      gap:10px; padding:10px 12px;
       border-bottom:1px solid rgba(255,255,255,.10);
     }
     .videoTop .t{
-      font-size:13px;
-      color: rgba(255,255,255,.90);
-      white-space:nowrap;
-      overflow:hidden;
-      text-overflow:ellipsis;
-      max-width: 78vw;
+      font-size:13px; color: rgba(255,255,255,.90);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 78vw;
     }
     .btn{
       border-radius: 14px;
@@ -1462,25 +1730,19 @@ ${body}
       text-decoration:none;
     }
     .btn:hover{ background: rgba(255,255,255,.14); }
-
     video{
       width:100%;
       height: min(78vh, 680px);
       background:#000;
       display:block;
     }
-
     .warn{
-      position:fixed;
-      left:14px; right:14px;
-      bottom:14px;
-      text-align:center;
-      font-size:12px;
+      position:fixed; left:14px; right:14px; bottom:14px;
+      text-align:center; font-size:12px;
       color: rgba(255,255,255,.78);
       opacity:${hasVideo ? "0" : "1"};
       pointer-events:none;
     }
-
     @media (max-width: 980px){
       body{overflow:auto}
       .stage{position:relative; height: calc(100vh - 20px); min-height: 520px;}
@@ -1508,9 +1770,7 @@ ${body}
         <div class="box"></div>
         <div class="ribbonV"></div>
         <div class="ribbonH"></div>
-        <div class="bow">
-          <div class="knot"></div>
-        </div>
+        <div class="bow"><div class="knot"></div></div>
       </div>
 
       <div class="tap" id="tapText">${hasVideo ? (caption ? "✨ " + safeCaption : "✨ Toque / clique no presente") : "⚠️ Vídeo ainda não foi enviado"}</div>
@@ -1569,8 +1829,7 @@ ${body}
           const a = (Math.random()*Math.PI*2);
           const sp = (Math.random()*3.2 + 2.4) * dpr;
           particles.push({
-            x: cx,
-            y: cy,
+            x: cx, y: cy,
             vx: Math.cos(a)*sp,
             vy: Math.sin(a)*sp - (Math.random()*2.2*dpr),
             r: (Math.random()*2.2 + 0.8)*dpr,
@@ -1752,12 +2011,7 @@ ${body}
         linear-gradient(135deg, var(--bg1), var(--bg2));
       overflow:hidden;
     }
-    .wrap{
-      min-height:100%;
-      display:grid;
-      place-items:center;
-      padding: 22px;
-    }
+    .wrap{ min-height:100%; display:grid; place-items:center; padding: 22px; }
     .shell{
       width:min(1040px, 100%);
       border-radius: calc(var(--r) + 6px);
@@ -1770,18 +2024,10 @@ ${body}
     .top{
       padding:18px 18px 16px;
       border-bottom:1px solid rgba(255,255,255,.08);
-      display:flex;
-      align-items:flex-end;
-      justify-content:space-between;
-      gap:12px;
-      flex-wrap:wrap;
+      display:flex; align-items:flex-end; justify-content:space-between;
+      gap:12px; flex-wrap:wrap;
     }
-    .title{
-      display:flex;
-      flex-direction:column;
-      gap:6px;
-      min-width: 240px;
-    }
+    .title{ display:flex; flex-direction:column; gap:6px; min-width: 240px; }
     .title h1{
       margin:0;
       font-size: clamp(18px, 2.6vw, 30px);
@@ -1810,13 +2056,7 @@ ${body}
       white-space:nowrap;
     }
     .badge b{ color: var(--gold1); font-weight:800; }
-
-    .grid{
-      display:grid;
-      grid-template-columns: 1.05fr .95fr;
-      gap:14px;
-      padding: 16px;
-    }
+    .grid{ display:grid; grid-template-columns: 1.05fr .95fr; gap:14px; padding: 16px; }
     .panel{
       border-radius: var(--r);
       border:1px solid var(--stroke);
@@ -1824,17 +2064,8 @@ ${body}
       box-shadow: 0 16px 45px rgba(0,0,0,.25);
       overflow:hidden;
     }
-    .left{
-      padding:16px;
-      display:grid;
-      gap:12px;
-      align-content:start;
-    }
-    .kv{
-      display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap:10px;
-    }
+    .left{ padding:16px; display:grid; gap:12px; align-content:start; }
+    .kv{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
     .cell{
       border-radius: 16px;
       border:1px solid rgba(255,255,255,.10);
@@ -1845,7 +2076,6 @@ ${body}
     .k{ font-size:11px; color: var(--muted); letter-spacing:.3px; text-transform:uppercase; }
     .v{ margin-top:6px; font-size:14px; font-weight:700; color: rgba(255,255,255,.92); }
     .v.muted{ font-weight:600; color: rgba(255,255,255,.82); }
-
     .msg{
       border-radius: 18px;
       border:1px solid rgba(255,255,255,.10);
@@ -1856,14 +2086,7 @@ ${body}
       white-space:pre-wrap;
       min-height: 96px;
     }
-
-    .actions{
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-      align-items:center;
-    }
-
+    .actions{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
     .btn{
       appearance:none;
       border:1px solid rgba(255,255,255,.14);
@@ -1885,18 +2108,8 @@ ${body}
       background: linear-gradient(135deg, rgba(247,215,122,.18), rgba(215,185,92,.10));
     }
     .btn.primary b{ color: var(--gold1); }
-    .btn:disabled{
-      opacity:.55;
-      cursor:not-allowed;
-    }
-
-    .ticket{
-      padding:16px;
-      display:grid;
-      gap:12px;
-      align-content:start;
-      position:relative;
-    }
+    .btn:disabled{ opacity:.55; cursor:not-allowed; }
+    .ticket{ padding:16px; display:grid; gap:12px; align-content:start; position:relative; }
     .ticket:before{
       content:"";
       position:absolute;
@@ -1907,7 +2120,6 @@ ${body}
       pointer-events:none;
       opacity:.9;
     }
-
     .card2{
       position:relative;
       border-radius: 20px;
@@ -1916,7 +2128,6 @@ ${body}
       overflow:hidden;
       padding:14px;
     }
-
     .barcode{
       height: 54px;
       border-radius: 14px;
@@ -1931,21 +2142,8 @@ ${body}
       opacity:.22;
       margin-bottom:12px;
     }
-
-    .ticketRow{
-      display:flex;
-      justify-content:space-between;
-      gap:10px;
-      align-items:flex-start;
-    }
-    .code{
-      font-weight:900;
-      letter-spacing:.6px;
-      color: var(--gold1);
-      font-size:14px;
-      text-align:right;
-      white-space:nowrap;
-    }
+    .ticketRow{ display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+    .code{ font-weight:900; letter-spacing:.6px; color: var(--gold1); font-size:14px; text-align:right; white-space:nowrap; }
     .status{
       margin-top:6px;
       display:inline-flex;
@@ -1960,17 +2158,9 @@ ${body}
       white-space:nowrap;
     }
     .status b{ color: var(--gold1); }
-
-    .small{
-      margin-top:8px;
-      font-size:12px;
-      color: rgba(255,255,255,.70);
-      line-height:1.45;
-    }
-
+    .small{ margin-top:8px; font-size:12px; color: rgba(255,255,255,.70); line-height:1.45; }
     .overlay{
-      position:fixed;
-      inset:0;
+      position:fixed; inset:0;
       background: rgba(0,0,0,.88);
       display:none;
       place-items:center;
@@ -2003,13 +2193,7 @@ ${body}
       text-overflow:ellipsis;
       max-width: 78vw;
     }
-    video{
-      width:100%;
-      height: min(78vh, 680px);
-      background:#000;
-      display:block;
-    }
-
+    video{ width:100%; height: min(78vh, 680px); background:#000; display:block; }
     @media (max-width: 980px){
       body{ overflow:auto; }
       .grid{ grid-template-columns: 1fr; }
@@ -2067,9 +2251,7 @@ ${body}
               }
             </div>
 
-            <div class="small">
-              Dica: confirme presença pelo WhatsApp. Se tiver trailer, assista pelo botão VIP.
-            </div>
+            <div class="small">Dica: confirme presença pelo WhatsApp. Se tiver trailer, assista pelo botão VIP.</div>
           </div>
         </div>
 
@@ -2089,14 +2271,10 @@ ${body}
                   <div class="status">Status: <b>ATIVO</b></div>
                 </div>
               </div>
-              <div class="small" style="margin-top:12px;">
-                Apresente este ingresso VIP na entrada. Chegue com antecedência.
-              </div>
+              <div class="small" style="margin-top:12px;">Apresente este ingresso VIP na entrada. Chegue com antecedência.</div>
             </div>
 
-            <div class="small">
-              ${hasVideo ? "O trailer abre em overlay (tela cheia pode depender do navegador)." : "Este convite não possui trailer."}
-            </div>
+            <div class="small">${hasVideo ? "O trailer abre em overlay (tela cheia pode depender do navegador)." : "Este convite não possui trailer."}</div>
           </div>
         </div>
       </div>
@@ -2222,3 +2400,4 @@ ${body}
 </script>
 </body>
 </html>
+
