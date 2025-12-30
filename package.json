@@ -1,8 +1,9 @@
-{
+ {
   "name": "cartinhas-builder",
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
+    "@supabase/supabase-js": "^2.89.0",
     "@vercel/blob": "^2.0.0"
   }
 }
