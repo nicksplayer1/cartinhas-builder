@@ -1,4 +1,4 @@
- <!doctype html>
+<!doctype html>
 <html lang="pt-br">
 <head>
   <meta charset="utf-8" />
@@ -223,7 +223,7 @@
           <div class="grid" id="form"></div>
 
           <div class="hint" style="margin-top:10px;">
-            No celular: escolha a foto/vídeo e aguarde carregar. Se não aparecer no preview, troque e tente de novo.
+            No celular: escolha a foto/vídeo/áudio e aguarde carregar. Se não aparecer no preview, troque e tente de novo.
           </div>
 
           <div class="mini" id="localHistoryBox" style="display:none;">
@@ -369,9 +369,12 @@
       r.readAsDataURL(file);
     });
   }
+  function makeObjUrl(file){
+    try{ return URL.createObjectURL(file); }catch(e){ return ""; }
+  }
 
   // =========================
-  // Upload de vídeo para Vercel Blob (via /api/upload)
+  // Upload para Vercel Blob (via /api/upload)
   // =========================
   let _blobClientPromise = null;
 
@@ -382,12 +385,12 @@
     return _blobClientPromise;
   }
 
-  async function uploadVideoToBlob(file, onProgress){
+  async function uploadFileToBlob(file, folder, onProgress){
     const mod = await getBlobClient();
     const upload = mod.upload;
 
-    const ext = (String(file.name || "").split(".").pop() || "mp4").toLowerCase();
-    const path = `cartinhas/videos/${Date.now()}_${Math.random().toString(16).slice(2)}.${ext}`;
+    const ext = (String(file.name || "").split(".").pop() || "bin").toLowerCase();
+    const path = `cartinhas/${folder}/${Date.now()}_${Math.random().toString(16).slice(2)}.${ext}`;
 
     const blob = await upload(path, file, {
       access: "public",
@@ -401,6 +404,11 @@
 
     if(!blob || !blob.url) throw new Error("Upload não retornou URL.");
     return blob.url;
+  }
+
+  // Compat (seu código já usava esse nome)
+  async function uploadVideoToBlob(file, onProgress){
+    return uploadFileToBlob(file, "videos", onProgress);
   }
 
   function makeField(field, value, onChange){
@@ -447,7 +455,7 @@
     } else {
       el = document.createElement("input");
       el.id = id;
-      el.type = field.inputType || "text";   // ✅ suporta date/time/etc
+      el.type = field.inputType || "text";
       el.value = value ?? "";
       if(field.placeholder) el.placeholder = field.placeholder;
     }
@@ -611,7 +619,7 @@
   $("#btnMyLinks").addEventListener("click", openMyLinksModal);
 
   // =========================
-  // THEMES (inclui Presente + Vídeo Glass + Convite VIP + BO ZUEIRA)
+  // THEMES (inclui Presente + Vídeo Glass + Convite VIP + BO ZUEIRA + RH)
   // =========================
   const THEMES = {
     amor: {
@@ -675,11 +683,10 @@
       generate: (data, asset) => genConviteVIP(data, asset)
     },
 
-    // ✅ NOVO: BO (Zueira)
     boZueira: {
       emoji: "🕵️",
       name: "BO (Zueira)",
-      desc: "Boletim de ocorrência divertido, com carimbo e gravidade.",
+      desc: "Boletim de ocorrência divertido, com carimbo e evidências (texto + mídia opcional).",
       hint: "Preencha como se fosse um BO — só que na brincadeira 😄",
       fields: [
         { key:"org", label:"Órgão", placeholder:"Delegacia da Zueira" },
@@ -698,11 +705,43 @@
         { key:"local", label:"Local", placeholder:"Área comum / ambiente virtual" },
         { key:"categoria", label:"Classificação do caso", placeholder:"Suspeita de excesso de charme" },
         { key:"envolvidos", label:"Envolvidos", placeholder:"Sujeito(s) não identificado(s)" },
-        { key:"evidencias", label:"Evidências (opcional)", placeholder:"prints, áudios suspeitos, risada fora do padrão" },
+        { key:"evidencias", label:"Evidências (texto opcional)", placeholder:"prints, áudios suspeitos, risada fora do padrão" },
+
+        { key:"evPhoto", label:"Evidência (foto opcional)", type:"file", accept:"image/*", help:"Opcional. Sobe pro Blob e aparece no BO." },
+        { key:"evAudio", label:"Evidência (áudio opcional — até 25MB)", type:"file", accept:"audio/*", help:"Opcional. Sobe pro Blob e aparece com player." },
+        { key:"evVideo", label:"Evidência (vídeo opcional — até 25MB)", type:"file", accept:"video/*", help:"Opcional. Sobe pro Blob e aparece com player." },
+
         { key:"relato", label:"Relato", type:"textarea", placeholder:"Descreva o ocorrido..." },
         { key:"assinatura", label:"Assinatura", placeholder:"Agente responsável (modo brincadeira)" }
       ],
-      generate: (data) => genBoZueira(data)
+      generate: (data, asset, mode) => genBoZueira(data, asset, mode)
+    },
+
+    rhComunicado: {
+      emoji: "📣",
+      name: "Comunicado (estilo RH)",
+      desc: "Documento “oficial” (zueira elegante) com nível e ação recomendada.",
+      hint: "Perfeito como meme elegante e genérico (sem nomes fixos).",
+      fields: [
+        { key:"org", label:"Nome da “empresa/organização” (genérico)", placeholder:"Departamento de Comunicação" },
+        { key:"subject", label:"Assunto do comunicado", placeholder:"Comunicado Interno" },
+        {
+          key:"level",
+          label:"Nível",
+          type:"select",
+          options:[
+            { value:"warn",   label:"🟡 Atenção" },
+            { value:"info",   label:"🔵 Informativo" },
+            { value:"ok",     label:"🟢 Aprovado" },
+            { value:"urgent", label:"🔴 Urgente" }
+          ]
+        },
+        { key:"lead", label:"Linha de abertura", placeholder:"Prezados(as), segue alinhamento importante:" },
+        { key:"body", label:"Texto principal", type:"textarea", placeholder:"Escreva o texto do comunicado…" },
+        { key:"action", label:"Ação recomendada (opcional)", placeholder:"Aprovar e encaminhar." },
+        { key:"sign", label:"Assinatura (genérica)", placeholder:"Equipe de Comunicação" }
+      ],
+      generate: (data) => genComunicadoRH(data)
     }
   };
 
@@ -754,6 +793,19 @@
         "• compartilhar com alguém de confiança\n" +
         "• evitar excesso de carisma em locais públicos",
       assinatura: "Agente responsável (modo brincadeira)"
+    },
+    rhComunicado: {
+      org: "Departamento de Comunicação",
+      subject: "Comunicado Interno",
+      level: "warn",
+      lead: "Prezados(as), segue alinhamento importante:",
+      body:
+        "Este comunicado tem caráter bem-humorado e foi emitido para registrar um “evento” especial.\n\n" +
+        "• Motivo: atualização de status\n" +
+        "• Impacto: sorriso garantido\n" +
+        "• Ação recomendada: compartilhar com alguém",
+      action: "Aprovar e encaminhar.",
+      sign: "Equipe de Comunicação"
     }
   };
 
@@ -762,7 +814,12 @@
     simples: {},
     presenteVideo: { videoFile: null, videoUrl: "" },
     vipConvite: { videoFile: null, videoUrl: "" },
-    boZueira: {}
+    boZueira: {
+      evPhotoFile: null, evPhotoUrl: "", evPhotoPreview: "",
+      evAudioFile: null, evAudioUrl: "", evAudioPreview: "",
+      evVideoFile: null, evVideoUrl: "", evVideoPreview: ""
+    },
+    rhComunicado: {}
   };
 
   function refreshPayButtonState(){
@@ -776,7 +833,8 @@
       return;
     }
     // vipConvite: vídeo é opcional
-    // boZueira: sem assets obrigatórios
+    // boZueira: evidências mídia opcionais
+    // rhComunicado: sem assets obrigatórios
     pay.disabled = false;
   }
 
@@ -919,6 +977,71 @@
             return;
           }
 
+          // ✅ Evidências do BO: foto/áudio/vídeo opcionais
+          if(themeId === "boZueira" && (field.key === "evPhoto" || field.key === "evAudio" || field.key === "evVideo")){
+            const a = assets.boZueira;
+
+            // reset se removeu
+            if(!f){
+              if(field.key === "evPhoto"){ a.evPhotoFile=null; a.evPhotoUrl=""; a.evPhotoPreview=""; setHelp("evPhoto","Opcional. Sobe pro Blob e aparece no BO."); }
+              if(field.key === "evAudio"){ a.evAudioFile=null; a.evAudioUrl=""; a.evAudioPreview=""; setHelp("evAudio","Opcional. Sobe pro Blob e aparece com player."); }
+              if(field.key === "evVideo"){ a.evVideoFile=null; a.evVideoUrl=""; a.evVideoPreview=""; setHelp("evVideo","Opcional. Sobe pro Blob e aparece com player."); }
+              updatePreview();
+              refreshPayButtonState();
+              return;
+            }
+
+            // preview local imediato (pra usuário ver algo enquanto sobe)
+            const localPreview = makeObjUrl(f);
+
+            // limites
+            const MAX_VIDEO_AUDIO = 25 * 1024 * 1024;
+            const MAX_IMAGE = 8 * 1024 * 1024;
+
+            if(field.key === "evPhoto" && f.size > MAX_IMAGE){
+              inputEl.value = "";
+              setHelp("evPhoto", "❌ Imagem muito grande. Limite: 8MB.");
+              alert("Imagem muito grande. Limite: 8MB.");
+              updatePreview();
+              return;
+            }
+            if((field.key === "evAudio" || field.key === "evVideo") && f.size > MAX_VIDEO_AUDIO){
+              inputEl.value = "";
+              setHelp(field.key, "❌ Arquivo muito grande. Limite: 25MB.");
+              alert("Arquivo muito grande. Limite: 25MB.");
+              updatePreview();
+              return;
+            }
+
+            // salva preview local
+            if(field.key === "evPhoto"){ a.evPhotoFile=f; a.evPhotoPreview=localPreview; a.evPhotoUrl=""; }
+            if(field.key === "evAudio"){ a.evAudioFile=f; a.evAudioPreview=localPreview; a.evAudioUrl=""; }
+            if(field.key === "evVideo"){ a.evVideoFile=f; a.evVideoPreview=localPreview; a.evVideoUrl=""; }
+
+            setHelp(field.key, "⏳ Enviando… 0%");
+            updatePreview();
+
+            try{
+              const folder = "bo-evidencias";
+              const url = await uploadFileToBlob(f, folder, (pct)=> setHelp(field.key, `⏳ Enviando… ${Math.round(pct)}%`));
+
+              if(field.key === "evPhoto"){ a.evPhotoUrl=url; setHelp("evPhoto","✅ Foto enviada!"); }
+              if(field.key === "evAudio"){ a.evAudioUrl=url; setHelp("evAudio","✅ Áudio enviado!"); }
+              if(field.key === "evVideo"){ a.evVideoUrl=url; setHelp("evVideo","✅ Vídeo enviado!"); }
+            }catch(err){
+              console.error("Falha no upload do BO:", err);
+              if(field.key === "evPhoto"){ a.evPhotoUrl=""; }
+              if(field.key === "evAudio"){ a.evAudioUrl=""; }
+              if(field.key === "evVideo"){ a.evVideoUrl=""; }
+              setHelp(field.key, "❌ Falha no upload. Veja o console (F12).");
+              alert("Falha no upload. Veja o console (F12) para detalhes.");
+            }
+
+            updatePreview();
+            refreshPayButtonState();
+            return;
+          }
+
           updatePreview();
           refreshPayButtonState();
           return;
@@ -945,6 +1068,13 @@
         ? "✅ Trailer já enviado (nesta sessão)."
         : "Opcional. Se enviar, aparece o botão “Assistir Trailer (VIP)”."
       );
+    }
+
+    if(themeId === "boZueira"){
+      // mantém textos se já tiver URL/preview
+      if(assets.boZueira.evPhotoUrl) setHelp("evPhoto","✅ Foto enviada!");
+      if(assets.boZueira.evAudioUrl) setHelp("evAudio","✅ Áudio enviado!");
+      if(assets.boZueira.evVideoUrl) setHelp("evVideo","✅ Vídeo enviado!");
     }
   }
 
@@ -1037,7 +1167,7 @@
         status: "pending",
         checkoutUrl,
         finalUrl: null,
-        title: (state[themeId]?.title || state[themeId]?.event || `Cartinha (${themeId})`)
+        title: (state[themeId]?.title || state[themeId]?.event || state[themeId]?.subject || `Cartinha (${themeId})`)
       });
 
       openModal({
@@ -1219,8 +1349,284 @@ ${body}
     `);
   }
 
-  // ✅ Tema: BO (zueira) — integrado
-  function genBoZueira(data){
+  // ✅ Tema: Comunicado (estilo RH)
+  function genComunicadoRH(data){
+    const org = (data.org || "Departamento de Comunicação").trim();
+    const subject = (data.subject || "Comunicado Interno").trim();
+    const level = (data.level || "warn").trim();
+    const lead = (data.lead || "Prezados(as), segue alinhamento importante:").trim();
+    const body = (data.body || "—").trim();
+    const action = (data.action || "").trim();
+    const sign = (data.sign || "Equipe de Comunicação").trim();
+
+    const pad = (n)=> String(n).padStart(2,"0");
+    const now = new Date();
+    const date = pad(now.getDate()) + "/" + pad(now.getMonth()+1) + "/" + now.getFullYear();
+    const time = pad(now.getHours()) + ":" + pad(now.getMinutes());
+
+    const map = {
+      warn:   { label:"Atenção",     rgb:[255,211,107] },
+      info:   { label:"Informativo", rgb:[125,211,252] },
+      ok:     { label:"Aprovado",    rgb:[157,255,181] },
+      urgent: { label:"Urgente",     rgb:[251,113,133] }
+    };
+    const v = map[level] || map.warn;
+    const color = `rgb(${v.rgb[0]},${v.rgb[1]},${v.rgb[2]})`;
+    const ringDot = `0 0 0 4px rgba(${v.rgb[0]},${v.rgb[1]},${v.rgb[2]},0.14)`;
+    const ringSeal = `0 0 0 5px rgba(${v.rgb[0]},${v.rgb[1]},${v.rgb[2]},0.12)`;
+
+    const seed = (org + "|" + subject + "|" + level + "|" + lead + "|" + body + "|" + sign).toLowerCase();
+    let h = 2166136261;
+    for(let i=0;i<seed.length;i++){
+      h ^= seed.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    const n = (h >>> 0) % 9000 + 1000;
+    const docId = "DOC-" + n;
+
+    return `<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>📣 ${escHtml(subject)}</title>
+  <style>
+    :root{
+      --bg1:#0b1020;
+      --bg2:#111a33;
+      --panel: rgba(255,255,255,.07);
+      --stroke: rgba(255,255,255,.14);
+      --text: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.68);
+      --shadow: 0 18px 60px rgba(0,0,0,.55);
+      --r: 18px;
+      --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family:var(--font);
+      color:var(--text);
+      background:
+        radial-gradient(1100px 800px at 25% 20%, #24346b 0%, transparent 60%),
+        radial-gradient(1000px 750px at 80% 25%, #6b235e 0%, transparent 55%),
+        linear-gradient(135deg, var(--bg1), var(--bg2));
+      min-height:100vh;
+      padding: 18px;
+    }
+    .card{
+      width: min(980px, 100%);
+      margin: 0 auto;
+      background: var(--panel);
+      border:1px solid var(--stroke);
+      border-radius: var(--r);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+      overflow:hidden;
+    }
+    .doc{ padding: 16px; }
+    .paper{
+      border-radius: 20px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.18);
+      overflow:hidden;
+    }
+    .paperTop{
+      padding:14px 16px;
+      border-bottom:1px solid rgba(255,255,255,.10);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .brand{display:flex; gap:10px; align-items:center; min-width:0;}
+    .logo{
+      width:40px; height:40px;
+      border-radius: 14px;
+      border:1px solid rgba(255,255,255,.14);
+      background:
+        radial-gradient(16px 16px at 28% 30%, rgba(255,255,255,.42) 0%, transparent 60%),
+        linear-gradient(135deg, rgba(125,211,252,.55), rgba(167,139,250,.40), rgba(251,113,133,.35));
+      box-shadow: 0 18px 40px rgba(0,0,0,.35);
+      flex: 0 0 auto;
+    }
+    .brandTxt{min-width:0}
+    .brandTxt .name{
+      margin:0;
+      font-size:13px;
+      font-weight:900;
+      letter-spacing:.2px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      max-width: 52ch;
+    }
+    .brandTxt .sub{
+      margin:4px 0 0;
+      font-size:12px;
+      color:var(--muted);
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      max-width: 60ch;
+    }
+    .tags{display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;}
+    .tag{
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      font-size:12px;
+      color: rgba(255,255,255,.82);
+      white-space:nowrap;
+    }
+    .tag strong{font-weight:800}
+    .tag .dot{
+      width:8px; height:8px; border-radius:99px;
+      background: ${escAttr(color)};
+      box-shadow: ${escAttr(ringDot)};
+      flex: 0 0 auto;
+    }
+    .paperBody{padding:16px;}
+    .titleRow{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+      margin-bottom: 12px;
+    }
+    .h1{
+      margin:0;
+      font-size: clamp(16px, 2.2vw, 22px);
+      font-weight: 950;
+      letter-spacing:.2px;
+    }
+    .meta{display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;}
+    .meta .m{
+      font-size:12px;
+      color: rgba(255,255,255,.80);
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.16);
+      padding:6px 10px;
+      border-radius: 999px;
+    }
+    .divider{height:1px; background: rgba(255,255,255,.10); margin: 12px 0;}
+    .box{
+      border-radius: 18px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.14);
+      padding: 14px;
+    }
+    .lead{font-size:13px; color: rgba(255,255,255,.90); line-height:1.7; margin:0;}
+    .bodyTxt{
+      margin: 10px 0 0;
+      color: rgba(255,255,255,.88);
+      line-height:1.75;
+      white-space:pre-wrap;
+      font-size:13px;
+    }
+    .sig{
+      margin-top: 14px;
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+      align-items:flex-end;
+    }
+    .sig .left{color: rgba(255,255,255,.75); font-size:12px; line-height:1.45;}
+    .sig .right{text-align:right; font-size:12px; color: rgba(255,255,255,.78);}
+    .sig .stamp{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:8px 10px;
+      border-radius: 14px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.16);
+    }
+    .stamp .seal{
+      width:12px; height:12px; border-radius: 999px;
+      background: ${escAttr(color)};
+      box-shadow: ${escAttr(ringSeal)};
+    }
+    .footerNote{
+      margin-top: 12px;
+      font-size:12px;
+      color: rgba(255,255,255,.62);
+      line-height:1.45;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="doc">
+      <div class="paper">
+        <div class="paperTop">
+          <div class="brand">
+            <div class="logo" aria-hidden="true"></div>
+            <div class="brandTxt">
+              <p class="name">${escHtml(org)}</p>
+              <p class="sub">Canal oficial • uso interno • versão digital</p>
+            </div>
+          </div>
+          <div class="tags">
+            <div class="tag"><span class="dot"></span><strong>${escHtml(v.label)}</strong></div>
+            <div class="tag"><span>🗓️</span><span>${escHtml(date)}</span></div>
+          </div>
+        </div>
+
+        <div class="paperBody">
+          <div class="titleRow">
+            <h2 class="h1">${escHtml(subject)}</h2>
+            <div class="meta">
+              <div class="m">${escHtml(docId)}</div>
+              <div class="m">v1.0</div>
+            </div>
+          </div>
+
+          <div class="box">
+            <p class="lead">${escHtml(lead)}</p>
+            <div class="divider"></div>
+            <div class="bodyTxt">${escHtml(body)}</div>
+
+            <div class="divider"></div>
+
+            <div class="sig">
+              <div class="left" style="${action ? "" : "display:none;"}">
+                <div style="color:rgba(255,255,255,.78); font-weight:700; margin-bottom:6px;">Ação recomendada</div>
+                <div>${escHtml(action)}</div>
+              </div>
+
+              <div class="right">
+                <div class="stamp">
+                  <span class="seal"></span>
+                  <span>${escHtml(sign)}</span>
+                </div>
+                <div style="margin-top:6px; opacity:.8">${escHtml(time)}</div>
+              </div>
+            </div>
+
+            <div class="footerNote">
+              Este documento é uma peça criativa. Use com responsabilidade (e risadas).
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+  }
+
+  // ✅ Tema: BO (zueira) — com evidências mídia opcionais
+  function genBoZueira(data, a, mode){
     const pad = (n)=> String(n).padStart(2,"0");
     const now = new Date();
     const date = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
@@ -1248,7 +1654,11 @@ ${body}
     const rel = (data.relato && String(data.relato).trim()) ? String(data.relato) : defaultRelato;
     const assinatura = (data.assinatura || "Agente responsável (modo brincadeira)").trim();
 
-    // hash simples (FNV-1a) pra gerar protocolo/gravidade determinísticos
+    // evidências mídia
+    const photo = a?.evPhotoUrl || a?.evPhotoPreview || "";
+    const audio = a?.evAudioUrl || a?.evAudioPreview || "";
+    const video = a?.evVideoUrl || a?.evVideoPreview || "";
+
     const seed = `${org}|${title}|${status}|${local}|${categoria}|${envolvidos}|${evidencias}|${date}|${time}`.toLowerCase();
     let h = 2166136261;
     for(let i=0;i<seed.length;i++){
@@ -1439,6 +1849,31 @@ ${body}
       max-width:100%;
     }
     .seal{width:12px; height:12px; border-radius:999px; background:${escAttr(v.dot)}; box-shadow:0 0 0 5px rgba(255,255,255,.10);}
+
+    /* Evidências mídia */
+    .mediaGrid{
+      margin-top:10px;
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:10px;
+    }
+    .mediaCard{
+      border-radius:16px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.18);
+      padding:10px;
+      overflow:hidden;
+    }
+    .mediaCard img{
+      width:100%;
+      display:block;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.10);
+    }
+    .mediaCard video, .mediaCard audio{
+      width:100%;
+      display:block;
+    }
     @media (max-width:980px){
       .grid2{grid-template-columns:1fr;}
       .stamp{position:static; transform:none; margin:10px 0 0; display:inline-block;}
@@ -1491,8 +1926,31 @@ ${body}
           <div class="val">${escHtml(local || "—")}</div>
         </div>
         <div class="panel">
-          <div class="lab">EVIDÊNCIAS (SE HOUVER)</div>
+          <div class="lab">EVIDÊNCIAS (TEXTO)</div>
           <div class="val">${escHtml(evidencias || "—")}</div>
+
+          ${(photo || audio || video) ? `
+            <div class="mediaGrid">
+              ${photo ? `
+                <div class="mediaCard">
+                  <div class="lab" style="margin-bottom:8px;">FOTO</div>
+                  <img src="${escAttr(photo)}" alt="Evidência (foto)">
+                </div>
+              ` : ``}
+              ${audio ? `
+                <div class="mediaCard">
+                  <div class="lab" style="margin-bottom:8px;">ÁUDIO</div>
+                  <audio controls src="${escAttr(audio)}"></audio>
+                </div>
+              ` : ``}
+              ${video ? `
+                <div class="mediaCard">
+                  <div class="lab" style="margin-bottom:8px;">VÍDEO</div>
+                  <video controls playsinline preload="metadata" src="${escAttr(video)}"></video>
+                </div>
+              ` : ``}
+            </div>
+          ` : ``}
         </div>
       </div>
 
@@ -2400,4 +2858,3 @@ ${body}
 </script>
 </body>
 </html>
-
