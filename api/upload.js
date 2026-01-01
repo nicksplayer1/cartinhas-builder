@@ -1,8 +1,6 @@
-import { handleUpload } from "@vercel/blob/client";
+ import { handleUpload } from "@vercel/blob/client";
 
 async function readJsonBody(req) {
-  // Vercel Node functions às vezes não populam req.body como você espera.
-  // Então a gente lê o stream e faz JSON.parse na mão.
   return await new Promise((resolve, reject) => {
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
@@ -18,12 +16,12 @@ async function readJsonBody(req) {
 }
 
 export default async function handler(req, res) {
-  // CORS (ok para seu caso)
+  // CORS (ok)
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS, GET");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  // Healthcheck no browser
+  // Healthcheck
   if (req.method === "GET") {
     return res.status(200).json({
       ok: true,
@@ -33,7 +31,8 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
+  if (req.method !== "POST")
+    return res.status(405).json({ error: "Method Not Allowed" });
 
   try {
     const body = await readJsonBody(req);
@@ -43,10 +42,58 @@ export default async function handler(req, res) {
       body,
       token: process.env.BLOB_READ_WRITE_TOKEN,
 
-      onBeforeGenerateToken: async (pathname) => {
+      onBeforeGenerateToken: async (pathname /*, clientPayload */) => {
+        // Regras por pasta:
+        // - cartinhas/videos/... => apenas vídeo
+        // - cartinhas/bo-evidencias/... => foto/áudio/vídeo
+        const isVideoFolder = pathname.includes("/videos/");
+        const isBoFolder = pathname.includes("/bo-evidencias/");
+
+        if (isVideoFolder) {
+          return {
+            maximumSizeInBytes: 25 * 1024 * 1024, // 25MB
+            allowedContentTypes: [
+              "video/mp4",
+              "video/webm",
+              "video/quicktime",
+              "video/x-m4v",
+            ],
+          };
+        }
+
+        if (isBoFolder) {
+          return {
+            maximumSizeInBytes: 25 * 1024 * 1024, // 25MB (áudio/vídeo). Imagem você já limita no client.
+            allowedContentTypes: [
+              // imagens
+              "image/png",
+              "image/jpeg",
+              "image/jpg",
+              "image/webp",
+              "image/gif",
+
+              // áudios
+              "audio/mpeg",
+              "audio/mp3",
+              "audio/wav",
+              "audio/ogg",
+              "audio/webm",
+              "audio/aac",
+              "audio/mp4",
+
+              // vídeos
+              "video/mp4",
+              "video/webm",
+              "video/quicktime",
+              "video/x-m4v",
+            ],
+          };
+        }
+
+        // Qualquer outra pasta: bloqueia por segurança
         return {
-          maximumSizeInBytes: 25 * 1024 * 1024, // 25MB
-          allowedContentTypes: ["video/mp4", "video/webm", "video/quicktime"],
+          maximumSizeInBytes: 1,
+          allowedContentTypes: [],
         };
       },
 
@@ -61,3 +108,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: e?.message || String(e) });
   }
 }
+
