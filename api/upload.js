@@ -46,8 +46,13 @@ export default async function handler(req, res) {
         // Regras por pasta:
         // - cartinhas/videos/... => apenas vídeo
         // - cartinhas/bo-evidencias/... => foto/áudio/vídeo
+        // - cartinhas/pedido-oficial/... => foto/áudio/vídeo (NOVO)
+
         const isVideoFolder = pathname.includes("/videos/");
         const isBoFolder = pathname.includes("/bo-evidencias/");
+        const isPedidoOficialFolder =
+          pathname.includes("/pedido-oficial/") ||
+          pathname.startsWith("cartinhas/pedido-oficial/");
 
         if (isVideoFolder) {
           return {
@@ -61,9 +66,10 @@ export default async function handler(req, res) {
           };
         }
 
-        if (isBoFolder) {
+        // Pastas que aceitam mídia completa (imagem/áudio/vídeo)
+        if (isBoFolder || isPedidoOficialFolder) {
           return {
-            maximumSizeInBytes: 25 * 1024 * 1024, // 25MB (áudio/vídeo). Imagem você já limita no client.
+            maximumSizeInBytes: 25 * 1024 * 1024, // 25MB
             allowedContentTypes: [
               // imagens
               "image/png",
