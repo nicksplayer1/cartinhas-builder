@@ -1,4 +1,4 @@
-<!doctype html>
+  <!doctype html>
 <html lang="pt-br">
 <head>
   <meta charset="utf-8" />
@@ -743,7 +743,34 @@
       ],
       generate: (data) => genComunicadoRH(data)
     }
-  };
+  
+,
+    pedidoOficial: {
+      emoji: "🧾",
+      name: "Pedido Oficial",
+      desc: "Pedido “oficial” interativo + anexos (foto/áudio/vídeo) opcionais.",
+      hint: "Preencha os campos. Foto/áudio/vídeo são opcionais (se enviar, ficam públicos).",
+      fields: [
+        { key:"from", label:"Seu nome", placeholder:"Eu" },
+        { key:"to", label:"Nome da pessoa", placeholder:"Você" },
+        {
+          key:"kind",
+          label:"Tipo de pedido",
+          type:"select",
+          options:[
+            { value:"namoro", label:"Pedido de namoro" },
+            { value:"noivado", label:"Pedido de noivado" },
+            { value:"voltar", label:"Pedido pra voltar" }
+          ]
+        },
+        { key:"msg", label:"Mensagem (opcional)", type:"textarea", placeholder:"Hoje eu vim fazer um pedido… do jeito mais oficial possível. 💛" },
+
+        { key:"photo", label:"Foto (opcional — até 8MB)", type:"file", accept:"image/*", help:"Opcional. Sobe pro Blob e aparece grande + miniatura." },
+        { key:"audio", label:"Áudio (opcional — até 25MB)", type:"file", accept:"audio/*", help:"Opcional. Sobe pro Blob e abre em overlay com player." },
+        { key:"video", label:"Vídeo (opcional — até 25MB)", type:"file", accept:"video/*", help:"Opcional. Sobe pro Blob e abre em overlay com player." }
+      ],
+      generate: (data, asset, mode) => genPedidoOficial(data, asset, mode)
+    }};
 
   let themeId = null;
 
@@ -807,7 +834,14 @@
       action: "Aprovar e encaminhar.",
       sign: "Equipe de Comunicação"
     }
-  };
+  
+,
+    pedidoOficial: {
+      from: "Eu",
+      to: "Você",
+      kind: "namoro",
+      msg: "Hoje eu vim fazer um pedido… do jeito mais oficial possível. 💛"
+    }};
 
   const assets = {
     amor: { photo: null },
@@ -820,7 +854,13 @@
       evVideoFile: null, evVideoUrl: "", evVideoPreview: ""
     },
     rhComunicado: {}
-  };
+  
+,
+    pedidoOficial: {
+      photoFile: null, photoUrl: "", photoPreview: "",
+      audioFile: null, audioUrl: "", audioPreview: "",
+      videoFile: null, videoUrl: "", videoPreview: ""
+    }};
 
   function refreshPayButtonState(){
     const pay = $("#btnPay");
@@ -977,7 +1017,71 @@
             return;
           }
 
-          // ✅ Evidências do BO: foto/áudio/vídeo opcionais
+          
+          // ✅ Pedido Oficial: foto/áudio/vídeo opcionais
+          if(themeId === "pedidoOficial" && (field.key === "photo" || field.key === "audio" || field.key === "video")){
+            const a = assets.pedidoOficial;
+
+            // reset se removeu
+            if(!f){
+              if(field.key === "photo"){ a.photoFile=null; a.photoUrl=""; a.photoPreview=""; setHelp("photo","Opcional. Sobe pro Blob e aparece grande + miniatura."); }
+              if(field.key === "audio"){ a.audioFile=null; a.audioUrl=""; a.audioPreview=""; setHelp("audio","Opcional. Sobe pro Blob e abre em overlay com player."); }
+              if(field.key === "video"){ a.videoFile=null; a.videoUrl=""; a.videoPreview=""; setHelp("video","Opcional. Sobe pro Blob e abre em overlay com player."); }
+              updatePreview();
+              refreshPayButtonState();
+              return;
+            }
+
+            const localPreview = makeObjUrl(f);
+
+            const MAX_VIDEO_AUDIO = 25 * 1024 * 1024;
+            const MAX_IMAGE = 8 * 1024 * 1024;
+
+            if(field.key === "photo" && f.size > MAX_IMAGE){
+              inputEl.value = "";
+              setHelp("photo", "❌ Imagem muito grande. Limite: 8MB.");
+              alert("Imagem muito grande. Limite: 8MB.");
+              updatePreview();
+              return;
+            }
+            if((field.key === "audio" || field.key === "video") && f.size > MAX_VIDEO_AUDIO){
+              inputEl.value = "";
+              setHelp(field.key, "❌ Arquivo muito grande. Limite: 25MB.");
+              alert("Arquivo muito grande. Limite: 25MB.");
+              updatePreview();
+              return;
+            }
+
+            // salva preview local imediato
+            if(field.key === "photo"){ a.photoFile=f; a.photoPreview=localPreview; a.photoUrl=""; }
+            if(field.key === "audio"){ a.audioFile=f; a.audioPreview=localPreview; a.audioUrl=""; }
+            if(field.key === "video"){ a.videoFile=f; a.videoPreview=localPreview; a.videoUrl=""; }
+
+            setHelp(field.key, "⏳ Enviando… 0%");
+            updatePreview();
+
+            try{
+              const folder = "pedido-oficial";
+              const url = await uploadFileToBlob(f, folder, (pct)=> setHelp(field.key, `⏳ Enviando… ${Math.round(pct)}%`));
+
+              if(field.key === "photo"){ a.photoUrl=url; setHelp("photo","✅ Foto enviada!"); }
+              if(field.key === "audio"){ a.audioUrl=url; setHelp("audio","✅ Áudio enviado!"); }
+              if(field.key === "video"){ a.videoUrl=url; setHelp("video","✅ Vídeo enviado!"); }
+            }catch(err){
+              console.error("Falha no upload do Pedido Oficial:", err);
+              if(field.key === "photo"){ a.photoUrl=""; }
+              if(field.key === "audio"){ a.audioUrl=""; }
+              if(field.key === "video"){ a.videoUrl=""; }
+              setHelp(field.key, "❌ Falha no upload. Veja o console (F12).");
+              alert("Falha no upload. Veja o console (F12) para detalhes.");
+            }
+
+            updatePreview();
+            refreshPayButtonState();
+            return;
+          }
+
+// ✅ Evidências do BO: foto/áudio/vídeo opcionais
           if(themeId === "boZueira" && (field.key === "evPhoto" || field.key === "evAudio" || field.key === "evVideo")){
             const a = assets.boZueira;
 
@@ -1076,7 +1180,14 @@
       if(assets.boZueira.evAudioUrl) setHelp("evAudio","✅ Áudio enviado!");
       if(assets.boZueira.evVideoUrl) setHelp("evVideo","✅ Vídeo enviado!");
     }
-  }
+  
+    if(themeId === "pedidoOficial"){
+      const a = assets.pedidoOficial;
+      setHelp("photo", a.photoUrl ? "✅ Foto enviada! (nesta sessão)" : "Opcional. Sobe pro Blob e aparece grande + miniatura.");
+      setHelp("audio", a.audioUrl ? "✅ Áudio enviado! (nesta sessão)" : "Opcional. Sobe pro Blob e abre em overlay com player.");
+      setHelp("video", a.videoUrl ? "✅ Vídeo enviado! (nesta sessão)" : "Opcional. Sobe pro Blob e abre em overlay com player.");
+    }
+}
 
   function updatePreview(){
     if(!themeId){
@@ -1973,6 +2084,744 @@ ${body}
 </body>
 </html>`;
   }
+  // ✅ Tema: Pedido Oficial (namoro/noivado/voltar) — foto/áudio/vídeo opcionais
+  function genPedidoOficial(data, a, mode){
+    const from = (data.from || "Eu").trim();
+    const to   = (data.to   || "Você").trim();
+    const kind = (data.kind || "namoro").trim();
+    const msg  = (data.msg  || "Hoje eu vim fazer um pedido… do jeito mais oficial possível. 💛").trim();
+
+    const photo = (mode === "publish")
+      ? (a?.photoUrl || "")
+      : (a?.photoPreview || a?.photoUrl || "");
+    const audio = (mode === "publish")
+      ? (a?.audioUrl || "")
+      : (a?.audioPreview || a?.audioUrl || "");
+    const video = (mode === "publish")
+      ? (a?.videoUrl || "")
+      : (a?.videoPreview || a?.videoUrl || "");
+
+    const payload = {
+      from, to, kind, msg,
+      photoUrl: photo,
+      audioUrl: audio,
+      videoUrl: video
+    };
+
+    // Obs: aqui dentro do index (script), precisamos escapar </scr"+"ipt> como <\/script>
+    return `<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>🧾 Pedido Oficial</title>
+
+  <style>
+    :root{
+      --bg1:#0b1020;
+      --bg2:#111a33;
+      --panel: rgba(255,255,255,.06);
+      --stroke: rgba(255,255,255,.14);
+      --txt: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.68);
+      --shadow: 0 22px 80px rgba(0,0,0,.55);
+      --r: 22px;
+      --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      --gold: #f3d27b;
+    }
+
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family:var(--font);
+      color:var(--txt);
+      background:
+        radial-gradient(1100px 800px at 20% 18%, rgba(124,58,237,.28) 0%, transparent 60%),
+        radial-gradient(1000px 780px at 85% 25%, rgba(255,90,190,.22) 0%, transparent 60%),
+        radial-gradient(1000px 780px at 50% 110%, rgba(34,211,238,.14) 0%, transparent 60%),
+        linear-gradient(135deg, var(--bg1), var(--bg2));
+      min-height:100vh;
+      padding: 18px;
+    }
+
+    .stage{
+      min-height: calc(100vh - 36px);
+      display:grid;
+      place-items:center;
+      padding: 14px;
+    }
+
+    .shell{
+      width: min(980px, 100%);
+      border-radius: calc(var(--r) + 6px);
+      border:1px solid rgba(255,255,255,.14);
+      background:
+        radial-gradient(900px 420px at 30% 20%, rgba(247,215,122,.12) 0%, transparent 60%),
+        radial-gradient(900px 420px at 80% 25%, rgba(167,139,250,.10) 0%, transparent 60%),
+        rgba(255,255,255,.05);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(16px);
+      overflow:hidden;
+      position:relative;
+    }
+
+    .topBar{
+      padding: 12px 14px;
+      border-bottom:1px solid rgba(255,255,255,.08);
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+
+    .docTitle{
+      display:flex; flex-direction:column; gap:6px;
+      min-width: 240px;
+    }
+    .docTitle .kicker{
+      font-size:12px;
+      color: rgba(255,255,255,.78);
+      letter-spacing:.2px;
+      display:flex; gap:8px; flex-wrap:wrap; align-items:center;
+    }
+    .docTitle .kicker .dot{
+      width:8px; height:8px; border-radius:99px;
+      background: rgba(247,215,122,.95);
+      box-shadow: 0 0 0 4px rgba(247,215,122,.12);
+    }
+    .docTitle h2{
+      margin:0;
+      font-size: 15px;
+      font-weight: 950;
+      letter-spacing:.2px;
+    }
+    .metaTags{display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;}
+    .tag{
+      font-size:12px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.16);
+      color: rgba(255,255,255,.84);
+      white-space:nowrap;
+      display:inline-flex; gap:8px; align-items:center;
+    }
+
+    .content{ padding: 16px; display:grid; gap:14px; }
+
+    .envelopeWrap{ display:grid; place-items:center; padding: 10px 0 2px; }
+
+    .envelope{
+      width: min(740px, 100%);
+      border-radius: 26px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.22);
+      overflow:hidden;
+      position:relative;
+      box-shadow: 0 18px 60px rgba(0,0,0,.45);
+      transform: translateZ(0);
+    }
+
+    .envTop{
+      padding: 14px 16px;
+      border-bottom:1px solid rgba(255,255,255,.08);
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+      align-items:flex-start;
+    }
+
+    .envMeta{ display:flex; flex-direction:column; gap:4px; min-width: 230px; }
+    .envMeta .tofrom{ font-size: 12px; color: rgba(255,255,255,.76); }
+    .envMeta .tofrom b{color: rgba(255,255,255,.92)}
+    .hint{font-size:12px; color:var(--muted); line-height:1.45}
+
+    .envBig{ padding: 14px 16px 14px; }
+
+    .question{
+      margin:0;
+      font-size: clamp(20px, 3.1vw, 34px);
+      font-weight: 980;
+      letter-spacing:.2px;
+      line-height: 1.08;
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:baseline;
+    }
+    .question .hl{ color: var(--gold); text-shadow: 0 18px 60px rgba(0,0,0,.55); }
+    .subline{
+      margin: 10px 0 0;
+      font-size: 13px;
+      color: rgba(255,255,255,.82);
+      line-height:1.55;
+      white-space:pre-wrap;
+    }
+
+    .letter{
+      margin-top: 14px;
+      border-radius: 24px;
+      border:1px solid rgba(255,255,255,.12);
+      background:
+        radial-gradient(900px 420px at 25% 18%, rgba(255,120,190,.14) 0%, transparent 60%),
+        radial-gradient(900px 420px at 78% 22%, rgba(70,210,255,.12) 0%, transparent 60%),
+        rgba(0,0,0,.18);
+      overflow:hidden;
+      position:relative;
+    }
+    .letterH{
+      padding: 12px 14px;
+      border-bottom:1px solid rgba(255,255,255,.08);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .letterH .miniTitle{
+      font-size:13px;
+      font-weight: 950;
+      letter-spacing:.2px;
+      display:flex; gap:8px; align-items:center;
+    }
+    .seal{
+      width:38px; height:38px;
+      border-radius: 16px;
+      border:1px solid rgba(255,255,255,.12);
+      background:
+        radial-gradient(14px 14px at 28% 26%, rgba(255,255,255,.35) 0%, transparent 60%),
+        linear-gradient(135deg, rgba(247,215,122,.25), rgba(255,255,255,.06));
+      display:grid; place-items:center;
+      box-shadow: 0 18px 45px rgba(0,0,0,.35);
+      user-select:none;
+    }
+    .seal span{ font-weight: 950; letter-spacing:.3px; color: rgba(255,255,255,.88); }
+
+    .letterB{ padding: 14px; display:grid; gap:12px; }
+
+    .meta{
+      font-size:12px;
+      color: rgba(255,255,255,.78);
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+    .meta .chip{
+      display:inline-flex; gap:8px; align-items:center;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.16);
+    }
+
+    /* FOTO grande */
+    .photoHero{
+      border-radius: 22px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.18);
+      overflow:hidden;
+      box-shadow: 0 18px 55px rgba(0,0,0,.35);
+      cursor: pointer;
+      display:none;
+    }
+    .photoHero img{
+      width:100%;
+      height: clamp(210px, 30vw, 380px);
+      object-fit: cover;
+      display:block;
+    }
+
+    .msg{
+      border-radius: 18px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.16);
+      padding: 14px;
+      color: rgba(255,255,255,.88);
+      line-height: 1.7;
+      white-space:pre-wrap;
+      font-size: 13px;
+      display:none;
+    }
+
+    .attachBar{
+      border-radius: 20px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.16);
+      padding: 12px;
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+    .attachBar .left{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+    .badgeOk{
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.14);
+      font-size:12px;
+      color: rgba(255,255,255,.82);
+    }
+
+    .mini{
+      width: 74px; height: 74px;
+      border-radius: 18px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.20);
+      overflow:hidden;
+      display:grid;
+      place-items:center;
+      box-shadow: 0 18px 45px rgba(0,0,0,.28);
+      cursor:pointer;
+      flex:0 0 auto;
+    }
+    .mini img{width:100%; height:100%; object-fit:cover; display:block;}
+    .mini .ph{font-size:11px; color: rgba(255,255,255,.65); text-align:center; padding:8px}
+
+    .mediaBtns{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+      justify-content:flex-end;
+    }
+
+    .btn{
+      border-radius: 14px;
+      border:1px solid rgba(255,255,255,.16);
+      background: rgba(255,255,255,.10);
+      color: var(--txt);
+      padding:10px 12px;
+      cursor:pointer;
+      font-size:13px;
+      display:inline-flex; gap:8px; align-items:center;
+      text-decoration:none;
+      user-select:none;
+    }
+    .btn:hover{ background: rgba(255,255,255,.14); }
+    .btn:disabled{ opacity:.55; cursor:not-allowed; }
+    .btn.soft{ background: rgba(0,0,0,.18); }
+    .btn.gold{
+      border-color: rgba(247,215,122,.35);
+      background: linear-gradient(135deg, rgba(247,215,122,.18), rgba(215,185,92,.10));
+    }
+
+    /* overlays */
+    .ov{
+      position:fixed;
+      inset:0;
+      background: rgba(0,0,0,.88);
+      display:none;
+      place-items:center;
+      padding: 14px;
+      z-index:9999;
+    }
+    .ov.show{display:grid;}
+    .ovBox{
+      width: min(980px, 100%);
+      border-radius: 20px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(16,16,22,.72);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+      backdrop-filter: blur(14px);
+    }
+    .ovTop{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      padding: 10px 12px;
+      border-bottom:1px solid rgba(255,255,255,.10);
+      flex-wrap:wrap;
+    }
+    .ovTop .ovT{
+      font-size:13px;
+      color: rgba(255,255,255,.92);
+      font-weight: 900;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      max-width: 78vw;
+    }
+    .ovBody{padding:12px;}
+    .ovBody img{ width:100%; border-radius: 14px; border:1px solid rgba(255,255,255,.10); display:block; }
+    .ovBody video{
+      width:100%;
+      height: min(78vh, 680px);
+      background:#000;
+      border-radius: 14px;
+      border:1px solid rgba(255,255,255,.10);
+      display:block;
+    }
+    .ovBody audio{ width:100%; display:block; }
+
+    @media (max-width: 980px){
+      body{ padding: 12px; }
+      .stage{ min-height: auto; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="stage">
+    <div class="shell" id="shell">
+      <div class="topBar">
+        <div class="docTitle">
+          <div class="kicker"><span class="dot"></span><span id="kickerText">Documento Oficial</span></div>
+          <h2>Para: <b id="outToLine">—</b> • De: <b id="outFromLine">—</b></h2>
+        </div>
+        <div class="metaTags">
+          <div class="tag">🗓️ <span id="outDate">—</span></div>
+          <div class="tag">🕒 <span id="outTime">—</span></div>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="envelopeWrap">
+          <div class="envelope" id="envelope">
+            <div class="envTop">
+              <div class="envMeta">
+                <div class="tofrom">Para: <b id="envTo">—</b> • De: <b id="envFrom">—</b></div>
+                <div class="hint">Assunto: <span id="envSubject">—</span></div>
+              </div>
+              <div class="tag">🧾 Protocolo <b id="proto">—</b></div>
+            </div>
+
+            <div class="envBig">
+              <h1 class="question" id="qLine">
+                <span>💛</span>
+                <span id="qTo">—</span>,
+                <span>você aceita</span>
+                <span class="hl" id="qKindWord">—</span>
+                <span>comigo?</span>
+              </h1>
+
+              <p class="subline" id="qMsg" style="display:none;"></p>
+
+              <div class="letter" id="letter">
+                <div class="letterH">
+                  <div class="miniTitle">
+                    <div class="seal"><span>OF</span></div>
+                    <span>Registro</span>
+                  </div>
+                  <div class="hint">Clique para registrar o aceite (se quiser).</div>
+                </div>
+
+                <div class="letterB">
+                  <div class="meta" id="outMeta"></div>
+
+                  <!-- FOTO GRANDE -->
+                  <div class="photoHero" id="photoHero"></div>
+
+                  <div class="msg" id="outMsg" style="display:none"></div>
+
+                  <div class="attachBar">
+                    <div class="left">
+                      <div class="mini" id="photoMini" title="Abrir foto">
+                        <div class="ph">Sem foto</div>
+                      </div>
+                      <div class="badgeOk" id="attachStatus">Anexos: nenhum</div>
+                    </div>
+
+                    <div class="mediaBtns">
+                      <button class="btn" id="btnOpenPhoto" disabled>🖼️ Foto</button>
+                      <button class="btn" id="btnOpenAudio" disabled>🔊 Áudio</button>
+                      <button class="btn" id="btnOpenVideo" disabled>🎬 Vídeo</button>
+                      <button class="btn soft" id="btnAccept">✅ Assinar e aceitar</button>
+                    </div>
+                  </div>
+
+                  <div class="hint" style="margin-top:10px;">
+                    Dica: se tiver áudio, ao abrir eu tento dar play automaticamente (alguns navegadores exigem toque).
+                  </div>
+
+                </div>
+              </div>
+
+              <div class="hint" style="margin-top:12px;">
+                Dica: depois de 1 clique você pode dar play no áudio automaticamente (se houver).
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- OVERLAY FOTO -->
+  <div class="ov" id="ovPhoto">
+    <div class="ovBox">
+      <div class="ovTop">
+        <div class="ovT">🖼️ Foto</div>
+        <div class="row">
+          <button class="btn soft" id="btnClosePhoto">✖️ Fechar</button>
+        </div>
+      </div>
+      <div class="ovBody" id="ovPhotoBody"></div>
+    </div>
+  </div>
+
+  <!-- OVERLAY ÁUDIO -->
+  <div class="ov" id="ovAudio">
+    <div class="ovBox">
+      <div class="ovTop">
+        <div class="ovT">🔊 Áudio</div>
+        <div class="row">
+          <button class="btn" id="btnPlayAudio">▶️ Play</button>
+          <button class="btn soft" id="btnCloseAudio">✖️ Fechar</button>
+        </div>
+      </div>
+      <div class="ovBody" id="ovAudioBody"></div>
+    </div>
+  </div>
+
+  <!-- OVERLAY VÍDEO -->
+  <div class="ov" id="ovVideo">
+    <div class="ovBox">
+      <div class="ovTop">
+        <div class="ovT">🎬 Vídeo</div>
+        <div class="row">
+          <button class="btn" id="btnFsVideo">⛶ Fullscreen</button>
+          <button class="btn soft" id="btnCloseVideo">✖️ Fechar</button>
+        </div>
+      </div>
+      <div class="ovBody" id="ovVideoBody"></div>
+    </div>
+  </div>
+
+  <script>
+    (function(){
+      const $ = (s)=> document.querySelector(s);
+      const payload = ${JSON.stringify(payload).replace(/</g,"\\u003c")};
+
+      const state = {
+        from: payload.from || "Eu",
+        to: payload.to || "Você",
+        kind: payload.kind || "namoro",
+        msg: payload.msg || "",
+        photoUrl: payload.photoUrl || "",
+        audioUrl: payload.audioUrl || "",
+        videoUrl: payload.videoUrl || "",
+        accepted: false
+      };
+
+      function nowBR(){
+        const d = new Date();
+        const pad = (n)=> String(n).padStart(2,"0");
+        return {
+          date: pad(d.getDate()) + "/" + pad(d.getMonth()+1) + "/" + d.getFullYear(),
+          time: pad(d.getHours()) + ":" + pad(d.getMinutes())
+        };
+      }
+
+      function protoCode(){
+        const seed = (state.from + "|" + state.to + "|" + state.kind + "|" + state.msg).toLowerCase();
+        let h = 2166136261;
+        for(let i=0;i<seed.length;i++){
+          h ^= seed.charCodeAt(i);
+          h = Math.imul(h, 16777619);
+        }
+        const n = (h >>> 0) % 9000 + 1000;
+        return "PO-" + n;
+      }
+
+      function kindTexts(kind){
+        if(kind === "noivado"){
+          return {
+            kicker: "Documento Oficial • PEDIDO DE NOIVADO",
+            subject: "Pedido de noivado",
+            kindWord: "casar",
+            acceptLine: "ACEITO • STATUS: NOIVADO 💍"
+          };
+        }
+        if(kind === "voltar"){
+          return {
+            kicker: "Documento Oficial • PEDIDO PRA VOLTAR",
+            subject: "Pedido pra voltar",
+            kindWord: "voltar",
+            acceptLine: "ACEITO • STATUS: REATIVADO 🫶"
+          };
+        }
+        return {
+          kicker: "Documento Oficial • PEDIDO DE NAMORO",
+          subject: "Pedido de namoro",
+          kindWord: "namorar",
+          acceptLine: "ACEITO • STATUS: OFICIAL ✅"
+        };
+      }
+
+      function showOv(id){ $(id).classList.add("show"); }
+      function hideOv(id){ $(id).classList.remove("show"); }
+
+      let _audioEl = null;
+      let _videoEl = null;
+
+      function openPhoto(){
+        if(!state.photoUrl) return;
+        $("#ovPhotoBody").innerHTML = '<img src="' + state.photoUrl + '" alt="foto">';
+        showOv("#ovPhoto");
+      }
+      function openAudio(){
+        if(!state.audioUrl) return;
+        $("#ovAudioBody").innerHTML = '<audio id="aud" controls src="' + state.audioUrl + '"></audio>';
+        _audioEl = $("#aud");
+        showOv("#ovAudio");
+        setTimeout(()=> { try{ _audioEl.play(); }catch(e){} }, 120);
+      }
+      function openVideo(){
+        if(!state.videoUrl) return;
+        $("#ovVideoBody").innerHTML = '<video id="vid" controls playsinline preload="metadata" src="' + state.videoUrl + '"></video>';
+        _videoEl = $("#vid");
+        showOv("#ovVideo");
+        setTimeout(()=> { try{ _videoEl.play(); }catch(e){} }, 150);
+      }
+
+      function tryFs(el){
+        try{
+          if(el.requestFullscreen) return el.requestFullscreen();
+          if(el.webkitRequestFullscreen) return el.webkitRequestFullscreen();
+          if(el.webkitEnterFullscreen) return el.webkitEnterFullscreen();
+        }catch(e){}
+      }
+
+      function syncUI(){
+        const k = kindTexts(state.kind);
+        const dt = nowBR();
+
+        $("#kickerText").textContent = k.kicker;
+        $("#outDate").textContent = dt.date;
+        $("#outTime").textContent = dt.time;
+
+        $("#outToLine").textContent = state.to || "—";
+        $("#outFromLine").textContent = state.from || "—";
+        $("#envTo").textContent = state.to || "—";
+        $("#envFrom").textContent = state.from || "—";
+        $("#qTo").textContent = state.to || "—";
+        $("#envSubject").textContent = k.subject;
+        $("#qKindWord").textContent = k.kindWord;
+
+        const proto = protoCode();
+        $("#proto").textContent = proto;
+
+        $("#outMeta").innerHTML = [
+          "Para: " + (state.to || "—"),
+          "De: " + (state.from || "—"),
+          "Tipo: " + k.subject
+        ].map(x => '<span class="chip">' + x + '</span>').join("");
+
+        // mensagem
+        const hasMsg = !!(state.msg && String(state.msg).trim());
+        $("#qMsg").style.display = hasMsg ? "block" : "none";
+        $("#qMsg").textContent = state.msg || "";
+        const outMsgEl = $("#outMsg");
+        if(outMsgEl){ outMsgEl.style.display = "none"; outMsgEl.textContent = ""; }
+// foto
+        if(state.photoUrl){
+          $("#photoHero").style.display = "block";
+          $("#photoHero").innerHTML = '<img src="' + state.photoUrl + '" alt="foto">';
+          $("#photoHero").onclick = openPhoto;
+
+          $("#photoMini").innerHTML = '<img src="' + state.photoUrl + '" alt="mini">';
+          $("#photoMini").onclick = openPhoto;
+        }else{
+          $("#photoHero").style.display = "none";
+          $("#photoHero").innerHTML = "";
+          $("#photoMini").innerHTML = '<div class="ph">Sem foto</div>';
+          $("#photoMini").onclick = null;
+        }
+
+        const hasPhoto = !!state.photoUrl;
+        const hasAudio = !!state.audioUrl;
+        const hasVideo = !!state.videoUrl;
+
+        $("#btnOpenPhoto").disabled = !hasPhoto;
+        $("#btnOpenAudio").disabled = !hasAudio;
+        $("#btnOpenVideo").disabled = !hasVideo;
+
+        const parts = [];
+        if(hasPhoto) parts.push("foto");
+        if(hasAudio) parts.push("áudio");
+        if(hasVideo) parts.push("vídeo");
+        $("#attachStatus").textContent = parts.length ? ("Anexos: " + parts.join(" • ")) : "Anexos: nenhum";
+
+        const btnAccept = $("#btnAccept");
+        btnAccept.textContent = state.accepted ? k.acceptLine : "✅ Assinar e aceitar";
+        btnAccept.classList.toggle("gold", !!state.accepted);
+      }
+
+      function toggleAccept(){
+        state.accepted = !state.accepted;
+        const k = kindTexts(state.kind);
+        if(state.accepted){
+          $("#envelope").animate?.(
+            [{transform:"scale(1)"},{transform:"scale(1.01)"},{transform:"scale(1)"}],
+            {duration: 340, easing:"ease-out"}
+          );
+        }
+        syncUI();
+      }
+
+      // botões anexos
+      $("#btnOpenPhoto").addEventListener("click", openPhoto);
+      $("#btnOpenAudio").addEventListener("click", openAudio);
+      $("#btnOpenVideo").addEventListener("click", openVideo);
+      $("#btnAccept").addEventListener("click", toggleAccept);
+
+      // fechar overlays
+      $("#btnClosePhoto").addEventListener("click", ()=> hideOv("#ovPhoto"));
+      $("#ovPhoto").addEventListener("click", (e)=> { if(e.target.id==="ovPhoto") hideOv("#ovPhoto"); });
+
+      $("#btnCloseAudio").addEventListener("click", ()=> {
+        try{ _audioEl?.pause(); }catch(e){}
+        hideOv("#ovAudio");
+      });
+      $("#btnPlayAudio").addEventListener("click", ()=> { try{ _audioEl?.play(); }catch(e){} });
+      $("#ovAudio").addEventListener("click", (e)=> {
+        if(e.target.id==="ovAudio"){
+          try{ _audioEl?.pause(); }catch(e){}
+          hideOv("#ovAudio");
+        }
+      });
+
+      $("#btnCloseVideo").addEventListener("click", ()=> {
+        try{ _videoEl?.pause(); }catch(e){}
+        try{ if(document.fullscreenElement) document.exitFullscreen(); }catch(e){}
+        hideOv("#ovVideo");
+      });
+      $("#btnFsVideo").addEventListener("click", ()=> { if(_videoEl) tryFs(_videoEl); });
+      $("#ovVideo").addEventListener("click", (e)=> {
+        if(e.target.id==="ovVideo"){
+          try{ _videoEl?.pause(); }catch(e){}
+          try{ if(document.fullscreenElement) document.exitFullscreen(); }catch(e){}
+          hideOv("#ovVideo");
+        }
+      });
+
+      syncUI();
+      // mantém data/hora atualizando (só por estética)
+      setInterval(syncUI, 30000);
+    })();
+  <\/script>
+</body>
+</html>`;
+  }
+
+
 
   // ✅ Tema: Presente Glass + vídeo (usa a.videoUrl)
   function genPresenteVideoGlass(data, a){
