@@ -272,6 +272,14 @@
 
 <script>
   const PRICE_LABEL = "R$ 4,90";
+  const __params = new URLSearchParams(location.search);
+  const DEV = __params.get("dev") === "1";
+  const DEV_KEY = __params.get("key") || "";
+
+  function payBtnLabel(){
+    return DEV ? "🧪 Gerar link (TESTE)" : "💳 Pagar " + PRICE_LABEL + " e gerar link";
+  }
+
   const $ = (s) => document.querySelector(s);
 
   // =========================
@@ -1372,10 +1380,11 @@
 
     const btn = $("#btnPay");
     btn.disabled = true;
-    btn.textContent = "⏳ Criando pagamento...";
+    btn.textContent = DEV ? "⏳ Gerando link (TESTE)..." : "⏳ Criando pagamento...";
 
     try{
-      const r = await fetch("/api/publish", {
+      const endpoint = DEV ? ("/api/publish-dev?key=" + encodeURIComponent(DEV_KEY)) : "/api/publish";
+      const r = await fetch(endpoint, {
         method:"POST",
         headers:{ "content-type":"application/json" },
         body: JSON.stringify({ theme: themeId, html })
@@ -1393,7 +1402,50 @@
       }
 
       const j = await r.json().catch(()=> ({}));
-      const checkoutUrl = j.checkout_url;
+
+      // ✅ Modo TESTE: gera link final sem pagamento (para gravar anúncios e validar temas)
+      if(DEV){
+        const finalUrl = j.url || j.finalUrl || j.publicUrl;
+        const id = j.id || ("dev_" + Date.now());
+        if(!finalUrl){
+          openModal({
+            title: "❌ Resposta inesperada (TESTE)",
+            hint: "A API respondeu OK, mas não veio url.",
+            linkText: JSON.stringify(j, null, 2),
+            buttons: []
+          });
+          return;
+        }
+
+        upsertLocalCartinha({
+          id,
+          createdAt: new Date().toISOString(),
+          theme: themeId,
+          status: "approved",
+          checkoutUrl: null,
+          finalUrl,
+          title: (state[themeId]?.title || state[themeId]?.event || state[themeId]?.subject || `Cartinha (${themeId})`)
+        });
+
+        saveLastLink({ id, url: finalUrl, at: Date.now(), stage:"dev", theme: themeId });
+
+        openModal({
+          title: "✅ Link de TESTE gerado",
+          hint: "Este link é para testes/gravação de anúncios (sem pagamento).",
+          linkText: finalUrl,
+          buttons: [
+            { type:"a", label:"🔗 Abrir link", href: finalUrl },
+            { label:"📋 Copiar link", onClick: async ()=>{
+                try{ await navigator.clipboard.writeText(finalUrl);}catch(e){}
+                alert("Copiado ✅");
+              }
+            },
+            { label:"🕘 Ver meus links", onClick: openMyLinksModal }
+          ]
+        });
+        return;
+      }
+const checkoutUrl = j.checkout_url;
       const id = j.id;
 
       if(!checkoutUrl || !id){
@@ -1472,13 +1524,13 @@
         buttons: []
       });
     }finally{
-      btn.textContent = "💳 Pagar " + PRICE_LABEL + " e gerar link";
+      btn.textContent = payBtnLabel();
       refreshPayButtonState();
     }
   }
 
   $("#btnPay").addEventListener("click", payAndGenerateLink);
-  $("#btnPay").textContent = "💳 Pagar " + PRICE_LABEL + " e gerar link";
+  $("#btnPay").textContent = payBtnLabel();
 
   // =========================
   // Geração das cartinhas
