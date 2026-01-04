@@ -1,4 +1,4 @@
- import { handleUpload } from "@vercel/blob/client";
+import { handleUpload } from "@vercel/blob/client";
 
 async function readJsonBody(req) {
   return await new Promise((resolve, reject) => {
@@ -16,10 +16,13 @@ async function readJsonBody(req) {
 }
 
 export default async function handler(req, res) {
-  // CORS (ok)
+  // CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS, GET");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, x-vercel-signature, x-vercel-blob-signature"
+  );
 
   // Healthcheck
   if (req.method === "GET") {
@@ -31,8 +34,9 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST")
+  if (req.method !== "POST") {
     return res.status(405).json({ error: "Method Not Allowed" });
+  }
 
   try {
     const body = await readJsonBody(req);
@@ -43,16 +47,18 @@ export default async function handler(req, res) {
       token: process.env.BLOB_READ_WRITE_TOKEN,
 
       onBeforeGenerateToken: async (pathname /*, clientPayload */) => {
-        // Regras por pasta:
-        // - cartinhas/videos/... => apenas vídeo
-        // - cartinhas/bo-evidencias/... => foto/áudio/vídeo
-        // - cartinhas/pedido-oficial/... => foto/áudio/vídeo (NOVO)
+        // Regras por pasta (precisa bater com o "folder" do seu index):
+        // - cartinhas/videos/...           => apenas vídeo
+        // - cartinhas/bo-evidencias/...    => foto/áudio/vídeo
+        // - cartinhas/pedido-oficial/...   => foto/áudio/vídeo
+        // - cartinhas/contrato-amor/...    => foto/áudio/vídeo  ✅ (NOVO)
+        const inFolder = (folder) =>
+          pathname.includes(`/${folder}/`) || pathname.startsWith(`cartinhas/${folder}/`);
 
-        const isVideoFolder = pathname.includes("/videos/");
-        const isBoFolder = pathname.includes("/bo-evidencias/");
-        const isPedidoOficialFolder =
-          pathname.includes("/pedido-oficial/") ||
-          pathname.startsWith("cartinhas/pedido-oficial/");
+        const isVideoFolder = inFolder("videos");
+        const isBoFolder = inFolder("bo-evidencias");
+        const isPedidoOficialFolder = inFolder("pedido-oficial");
+        const isContratoAmorFolder = inFolder("contrato-amor");
 
         if (isVideoFolder) {
           return {
@@ -67,7 +73,7 @@ export default async function handler(req, res) {
         }
 
         // Pastas que aceitam mídia completa (imagem/áudio/vídeo)
-        if (isBoFolder || isPedidoOficialFolder) {
+        if (isBoFolder || isPedidoOficialFolder || isContratoAmorFolder) {
           return {
             maximumSizeInBytes: 25 * 1024 * 1024, // 25MB
             allowedContentTypes: [
@@ -77,6 +83,9 @@ export default async function handler(req, res) {
               "image/jpg",
               "image/webp",
               "image/gif",
+              "image/avif",
+              "image/heic",
+              "image/heif",
 
               // áudios
               "audio/mpeg",
@@ -114,4 +123,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: e?.message || String(e) });
   }
 }
-
