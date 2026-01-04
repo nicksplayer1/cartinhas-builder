@@ -1,25 +1,48 @@
-import { put } from "@vercel/blob";
+ import { put } from "@vercel/blob";
 
-function getDevKey(req){
-  const q = req.query?.key || req.query?.k;
-  const h = req.headers["x-dev-key"];
-  return (q || h || "").toString();
+function getKey(req) {
+  // Next.js pages/api fornece req.query; em outras runtimes, fazemos parse de req.url
+  const q1 = req.query?.key || req.query?.k;
+  if (q1) return String(q1);
+
+  try {
+    const url = new URL(req.url, "http://localhost");
+    return url.searchParams.get("key") || url.searchParams.get("k") || "";
+  } catch {
+    return "";
+  }
+}
+
+async function readJson(req) {
+  return await new Promise((resolve, reject) => {
+    let raw = "";
+    req.on("data", (chunk) => (raw += chunk));
+    req.on("end", () => {
+      try {
+        resolve(raw ? JSON.parse(raw) : {});
+      } catch (e) {
+        reject(new Error("Body não é JSON válido"));
+      }
+    });
+    req.on("error", reject);
+  });
 }
 
 export default async function handler(req, res) {
-  // CORS
+  // CORS (para evitar problemas no browser)
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS, GET");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-dev-key");
 
   if (req.method === "OPTIONS") return res.status(200).end();
 
+  // Healthcheck
   if (req.method === "GET") {
     return res.status(200).json({
       ok: true,
       route: "/api/publish-dev",
-      hasBlobToken: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
       hasDevKey: Boolean(process.env.DEV_PUBLISH_KEY),
+      hasBlobToken: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
     });
   }
 
@@ -27,25 +50,30 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  // Segurança: exige chave
-  const requiredKey = process.env.DEV_PUBLISH_KEY;
-  if (!requiredKey) {
-    return res.status(500).json({
-      error: "DEV_PUBLISH_KEY não configurada. Defina esta env var para usar o modo TESTE.",
-    });
-  }
-
-  const provided = getDevKey(req);
-  if (provided !== requiredKey) {
-    return res.status(401).json({ error: "Chave inválida para modo TESTE." });
-  }
-
   try {
-    const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-    const theme = (body.theme || "tema").toString().slice(0, 40);
-    const html = body.html;
+    const expectedKey = String(process.env.DEV_PUBLISH_KEY || "");
+    const providedKey = (getKey(req) || req.headers["x-dev-key"] || "").toString();
 
-    if (!html || typeof html !== "string") {
+    if (!expectedKey) {
+      return res.status(500).json({
+        error: "DEV_PUBLISH_KEY não configurada nas Environment Variables.",
+      });
+    }
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      return res.status(500).json({
+        error: "BLOB_READ_WRITE_TOKEN não configurada nas Environment Variables.",
+      });
+    }
+
+    if (providedKey !== expectedKey) {
+      return res.status(401).json({ error: "Chave DEV inválida." });
+    }
+
+    const body = await readJson(req);
+    const theme = String(body?.theme || "tema");
+    const html = body?.html;
+
+    if (typeof html !== "string" || !html.trim()) {
       return res.status(400).json({ error: "Campo 'html' é obrigatório (string)." });
     }
 
@@ -64,3 +92,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: e?.message || String(e) });
   }
 }
+
